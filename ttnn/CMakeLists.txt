@@ -641,6 +641,7 @@ target_link_libraries(
     PRIVATE
         TTNN::Core
         TTNN::Ops::Bernoulli
+        TTNN::Ops::BernoulliNew
         TTNN::Ops::CCL
         TTNN::Ops::Conv
         TTNN::Ops::Core
@@ -882,6 +883,7 @@ set(FixmeOpIncDirs
 )
 
 add_subdirectory(cpp/ttnn/operations/bernoulli)
+add_subdirectory(cpp/ttnn/operations/bernoulli_new)
 add_subdirectory(cpp/ttnn/operations/ccl)
 add_subdirectory(cpp/ttnn/operations/conv)
 add_subdirectory(cpp/ttnn/operations/core)
