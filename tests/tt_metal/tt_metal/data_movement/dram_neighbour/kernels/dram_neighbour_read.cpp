@@ -26,19 +26,29 @@ void kernel_main() {
 
     {
         DeviceZoneScopedN("RISCV0");
+        // Read only from assigned adjacent bank
+        uint64_t src_noc_addr = get_noc_addr_from_bank_id<true>(bank_id, src_addr);
         for (uint32_t n = 0; n < num_of_transactions; n++) {
             dst_addr = l1_addr;
-            // Read only from assigned adjacent bank
-            uint64_t src_noc_addr = get_noc_addr_from_bank_id<true>(bank_id, src_addr);
             noc_async_read_one_packet_set_state(src_noc_addr, page_size_bytes);
             uint64_t next_page_noc_addr = src_noc_addr;
             for (uint32_t i = 0; i < pages_per_bank; i++) {
                 noc_async_read_one_packet_with_state(next_page_noc_addr, dst_addr);
                 dst_addr += page_size_bytes;
                 next_page_noc_addr += page_size_bytes;
+                // DPRINT << page_size_bytes << ENDL();
             }
         }
         noc_async_read_barrier();
 
+        // uint64_t dram_noc_addr = get_noc_addr_from_bank_id<dram>(dram_channel, dram_addr);
+
+        // {
+        //     DeviceZoneScopedN("RISCV1");
+        //     for (uint32_t i = 0; i < num_of_transactions; i++) {
+        //         noc_async_read(dram_noc_addr, local_l1_addr, bytes_per_transaction);
+        //     }
+        //     noc_async_read_barrier();
+        // }
     }
 }

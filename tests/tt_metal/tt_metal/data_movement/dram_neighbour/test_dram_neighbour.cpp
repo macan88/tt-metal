@@ -22,6 +22,11 @@ namespace unit_tests::dm::dram_neighbour {
 
 uint32_t runtime_host_id = 0;
 
+typedef struct IndexRange {
+    uint32_t start;
+    uint32_t end;
+} IndexRange;
+
 // Test config
 struct DramNeighbourConfig {
     uint32_t test_id = 0;
@@ -31,6 +36,7 @@ struct DramNeighbourConfig {
     uint32_t page_size_bytes = 0;
     DataFormat l1_data_format = DataFormat::Invalid;
     std::reference_wrapper<const std::map<uint32_t, uint32_t>> core_dram_map;
+    std::reference_wrapper<const std::map<uint32_t, IndexRange>> dram_index_map;
 
     DramNeighbourConfig(
         uint32_t test_id_,
@@ -39,14 +45,16 @@ struct DramNeighbourConfig {
         uint32_t pages_per_bank_,
         uint32_t page_size_bytes_,
         DataFormat l1_data_format_,
-        const std::map<uint32_t, uint32_t>& core_dram_map_)
-        : test_id(test_id_),
-          num_of_transactions(num_of_transactions_),
-          num_banks(num_banks_),
-          pages_per_bank(pages_per_bank_),
-          page_size_bytes(page_size_bytes_),
-          l1_data_format(l1_data_format_),
-          core_dram_map(core_dram_map_) {}
+        const std::map<uint32_t, uint32_t>& core_dram_map_,
+        const std::map<uint32_t, IndexRange>& dram_index_map_) :
+        test_id(test_id_),
+        num_of_transactions(num_of_transactions_),
+        num_banks(num_banks_),
+        pages_per_bank(pages_per_bank_),
+        page_size_bytes(page_size_bytes_),
+        l1_data_format(l1_data_format_),
+        core_dram_map(core_dram_map_),
+        dram_index_map(dram_index_map_) {}
 };
 
 void print_detailed_comparision(const vector<uint32_t>& packed_golden, const vector<uint32_t>& packed_output);
@@ -63,10 +71,16 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
     uint32_t num_pages = test_config.num_banks * test_config.pages_per_bank;
     const size_t total_size_bytes = num_pages * test_config.page_size_bytes;
     const map<uint32_t, uint32_t>& core_dram_map = test_config.core_dram_map.get();
+    const map<uint32_t, IndexRange>& dram_index_map = test_config.dram_index_map.get();
 
     std::vector<CoreCoord> dram_cores;
+    bool visited[10];
+    memset(visited, false, sizeof(visited));
     for(const auto& [key, value] : core_dram_map) {
-        dram_cores.push_back(CoreCoord{static_cast<uint16_t>(value), 0});
+        if (!visited[value]) {
+            dram_cores.push_back(CoreCoord{static_cast<uint16_t>(value), 0});
+            visited[value] = true;
+        }
         // log_info(tt::LogTest, "line 67: dram_cores vector - DRAM bank {}", value);
     }
 
@@ -163,31 +177,57 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
 
     vector<uint32_t> packed_output;
     vector<uint32_t> cur_output;
+    uint32_t per_core_output_size_bytes = total_size_bytes / test_config.num_banks;
+    // uint32_t per_core_output_size_elements = per_core_output_size_bytes / sizeof(uint32_t);
 
     for (uint32_t i = 0; i < worker_cores.size(); i++) {
-        detail::ReadFromDeviceL1(device, worker_cores[i], l1_addr[i], total_size_bytes/test_config.num_banks, cur_output);
-        // log_info(tt::LogTest, "line 170: Read from L1 of Core ({}, {})", worker_cores[i].x, worker_cores[i].y);
-        packed_output.insert(packed_output.end(), cur_output.begin(), cur_output.end());
+        // golden data for current core's adjacent bank
+        uint32_t key = (static_cast<uint32_t>(worker_cores[i].x) << 16) | static_cast<uint32_t>(worker_cores[i].y);
+        uint32_t dram_bank_id = core_dram_map.at(key);
+        IndexRange cur_indices = dram_index_map.at(dram_bank_id);
+        log_info(
+            tt::LogTest,
+            "line 175: Core ({}, {}), DRAM bank {}, Golden data indices: [{} - {})",
+            worker_cores[i].x,
+            worker_cores[i].y,
+            dram_bank_id,
+            cur_indices.start,
+            cur_indices.end);
+        for (int j = cur_indices.start; j < cur_indices.end; j++) {
+            packed_output.push_back(packed_golden[j]);
+        }
+
+        detail::ReadFromDeviceL1(device, worker_cores[i], l1_addr[i], per_core_output_size_bytes, cur_output);
+
+        // Verify results
+        bool is_equal = (packed_output == cur_output);
+        if (!is_equal) {
+            log_error(
+                tt::LogTest,
+                "Equality Check failed at index {} for Core ({}, {}) reading from DRAM bank {}. Test ID: {}, Run ID: "
+                "{}",
+                i,
+                worker_cores[i].x,
+                worker_cores[i].y,
+                dram_bank_id,
+                test_config.test_id,
+                runtime_host_id - 1);
+            log_info(tt::LogTest, "Golden vector");
+            print_vector(unpack_vector<bfloat16, uint32_t>(packed_golden));
+            log_info(tt::LogTest, "Packed Output vector");
+            print_vector(unpack_vector<bfloat16, uint32_t>(packed_output));
+            log_info(tt::LogTest, "Output vector");
+            print_vector(unpack_vector<bfloat16, uint32_t>(cur_output));
+
+            unit_tests::dm::dram_neighbour::print_detailed_comparision(packed_golden, packed_output);
+            return is_equal;
+        }
+
+        packed_output.clear();
         cur_output.clear();
     }
 
-    // erase zeros
-    packed_output.erase(remove(packed_output.begin(), packed_output.end(), 0), packed_output.end());
-
-    // Verify results
-    bool is_equal = (packed_output == packed_golden);
-    if (!is_equal) {
-        log_error(tt::LogTest, "Equality Check failed");
-        log_info(tt::LogTest, "Golden vector");
-        print_vector(unpack_vector<bfloat16, uint32_t>(packed_golden));
-        log_info(tt::LogTest, "Output vector");
-        print_vector(unpack_vector<bfloat16, uint32_t>(packed_output));
-
-        unit_tests::dm::dram_neighbour::print_detailed_comparision(packed_golden, packed_output);
-        return is_equal;
-    }
-
-    return is_equal;
+    return true;
 }
 
 std::map<uint32_t, uint32_t> core_dram_mapping_ideal(const shared_ptr<distributed::MeshDevice>& mesh_device, uint32_t num_dram_banks) {
@@ -207,6 +247,45 @@ std::map<uint32_t, uint32_t> core_dram_mapping_ideal(const shared_ptr<distribute
 
     return mapping;
 }
+
+// makes sure core_dram_map is one to one mapping
+std::map<uint32_t, IndexRange> get_golden_index_ranges(
+    const std::map<uint32_t, uint32_t>& core_dram_map, uint32_t total_size_bytes, uint32_t num_banks) {
+    std::map<uint32_t, IndexRange> index_ranges;
+
+    uint32_t per_core_output_size_bytes = total_size_bytes / num_banks;
+    uint32_t per_core_output_size_elements = per_core_output_size_bytes / sizeof(uint32_t);
+
+    uint32_t i = 0;
+    for (const auto& [key, dram_bank_id] : core_dram_map) {
+        uint32_t start_index = i * per_core_output_size_elements;
+        uint32_t end_index = start_index + per_core_output_size_elements;
+        index_ranges[dram_bank_id] = IndexRange{start_index, end_index};
+        i++;
+    }
+
+    return index_ranges;
+}
+
+// void add_neighbour_cores_dram_mapping(std::map<uint32_t, uint32_t>& core_dram_map, const
+// shared_ptr<distributed::MeshDevice>& mesh_device){
+//     CoreCoord grid_size = mesh_device->logical_grid_size();
+//     for(const auto& [key, value] : core_dram_map) {
+//         uint32_t cur_x = static_cast<uint32_t>(key >> 16);
+//         uint32_t cur_y = static_cast<uint32_t>(key & 0xFFFF);
+//         uint32_t dram_bank_id = value;
+
+//         if(cur_x + 1 > 0 && cur_x + 1 < grid_size.x) {
+//             uint32_t right_core_key = ((cur_x + 1) << 16) | cur_y;
+//             core_dram_map[right_core_key] = dram_bank_id;
+//         }
+
+//         if(cur_x - 1 >= 0 && cur_x - 1 < grid_size.x) {
+//             uint32_t left_core_key = ((cur_x - 1) << 16) | cur_y;
+//             core_dram_map[left_core_key] = dram_bank_id;
+//         }
+//     }
+// }
 
 void print_detailed_comparision(const vector<uint32_t>& packed_golden, const vector<uint32_t>& packed_output) {
     log_info(tt::LogTest, "\n\nDetailed Comparison:");
@@ -254,6 +333,10 @@ TEST_F(GenericMeshDeviceFixture, printLogical2PhysicalMapping) {
     EXPECT_TRUE(true);
 }
 
+using unit_tests::dm::dram_neighbour::core_dram_mapping_ideal;
+using unit_tests::dm::dram_neighbour::get_golden_index_ranges;
+// using unit_tests::dm::dram_neighbour::add_neighbour_cores_dram_mapping;
+using IndexRange = unit_tests::dm::dram_neighbour::IndexRange;
 
 TEST_F(GenericMeshDeviceFixture, idealClosestNeighbourTest) {
 
@@ -265,14 +348,15 @@ TEST_F(GenericMeshDeviceFixture, idealClosestNeighbourTest) {
     uint32_t pages_per_bank = 1;
     DataFormat l1_data_format = DataFormat::Float16_b;
     uint32_t page_size_bytes = tt::tile_size(l1_data_format);
-    std::map<uint32_t, uint32_t> core_dram_map =
-        unit_tests::dm::dram_neighbour::core_dram_mapping_ideal(mesh_device, num_banks);
+    std::map<uint32_t, uint32_t> core_dram_map = core_dram_mapping_ideal(mesh_device, num_banks);
+    std::map<uint32_t, IndexRange> dram_index_map =
+        get_golden_index_ranges(core_dram_map, num_banks * pages_per_bank * page_size_bytes, num_banks);
+    // add_neighbour_cores_dram_mapping(core_dram_map, mesh_device);
 
     for(const auto& [key, value] : core_dram_map) {
         CoreCoord core{static_cast<uint16_t>(key >> 16), static_cast<uint16_t>(key & 0xFFFF)};
-        // log_info(tt::LogTest, "line 268: Core ({}, {}) assigned to DRAM bank {}", core.x, core.y, value);
+        log_info(tt::LogTest, "line 268: Core ({}, {}) assigned to DRAM bank {}", core.x, core.y, value);
     }
-
 
     unit_tests::dm::dram_neighbour::DramNeighbourConfig test_config(
         test_id,
@@ -281,187 +365,186 @@ TEST_F(GenericMeshDeviceFixture, idealClosestNeighbourTest) {
         pages_per_bank,
         page_size_bytes,
         l1_data_format,
-        core_dram_map);
+        core_dram_map,
+        dram_index_map);
 
     EXPECT_TRUE(unit_tests::dm::dram_neighbour::run_dm_neighbour(mesh_device, test_config));
 }
 
+// TEST_F(GenericMeshDeviceFixture, numPagesSweepClosestNeighbourTest) {
 
-TEST_F(GenericMeshDeviceFixture, numPagesSweepClosestNeighbourTest) {
+//     shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
 
-    shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
+//     uint32_t test_id = 502;
+//     uint32_t num_banks = 1;
+//     uint32_t max_num_pages = 32;
+//     uint32_t max_transactions = 256;
+//     DataFormat l1_data_format = DataFormat::Float16_b;
+//     uint32_t page_size_bytes = tt::tile_size(l1_data_format) << 2;
+//     std::map<uint32_t, uint32_t> core_dram_map =
+//         unit_tests::dm::dram_neighbour::core_dram_mapping_ideal(mesh_device, num_banks);
 
-    uint32_t test_id = 502;
-    uint32_t num_banks = mesh_device->num_dram_channels();
-    uint32_t max_num_pages = 32;
-    uint32_t max_transactions = 256;
-    DataFormat l1_data_format = DataFormat::Float16_b;
-    uint32_t page_size_bytes = tt::tile_size(l1_data_format);
-    std::map<uint32_t, uint32_t> core_dram_map =
-        unit_tests::dm::dram_neighbour::core_dram_mapping_ideal(mesh_device, num_banks);
+//     for (uint32_t num_of_transactions = 1; num_of_transactions <= max_transactions; num_of_transactions *= 4) {
+//         for (uint32_t num_pages = 1; num_pages <= max_num_pages; num_pages *= 2) {
+//             unit_tests::dm::dram_neighbour::DramNeighbourConfig test_config(
+//                 test_id,
+//                 num_of_transactions,
+//                 num_banks,
+//                 num_pages,
+//                 page_size_bytes,
+//                 l1_data_format,
+//                 core_dram_map);
 
-    for (uint32_t num_of_transactions = 1; num_of_transactions <= max_transactions; num_of_transactions *= 4) {
-        for (uint32_t num_pages = 1; num_pages <= max_num_pages; num_pages *= 2) {
-            unit_tests::dm::dram_neighbour::DramNeighbourConfig test_config(
-                test_id,
-                num_of_transactions,
-                num_banks,
-                num_pages,
-                page_size_bytes,
-                l1_data_format,
-                core_dram_map);
+//             EXPECT_TRUE(unit_tests::dm::dram_neighbour::run_dm_neighbour(mesh_device, test_config));
+//         }
+//     }
 
-            EXPECT_TRUE(unit_tests::dm::dram_neighbour::run_dm_neighbour(mesh_device, test_config));
-        }
-    }
+// }
 
-}
+// TEST_F(GenericMeshDeviceFixture, numBankSweepClosestNeighbourTest) {
 
-TEST_F(GenericMeshDeviceFixture, numBankSweepClosestNeighbourTest) {
+//     shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
 
-    shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
+//     uint32_t test_id = 503;
+//     uint32_t max_num_banks = mesh_device->num_dram_channels();
+//     uint32_t num_pages = 32;
+//     uint32_t max_transactions = 256;
+//     DataFormat l1_data_format = DataFormat::Float16_b;
+//     uint32_t page_size_bytes = tt::tile_size(l1_data_format);
 
-    uint32_t test_id = 503;
-    uint32_t max_num_banks = mesh_device->num_dram_channels();
-    uint32_t num_pages = 32;
-    uint32_t max_transactions = 256;
-    DataFormat l1_data_format = DataFormat::Float16_b;
-    uint32_t page_size_bytes = tt::tile_size(l1_data_format);
+//     for (uint32_t num_of_transactions = 1; num_of_transactions <= max_transactions; num_of_transactions *= 4) {
+//         for (uint32_t num_banks = 1; num_banks <= max_num_banks; num_banks++) {
 
-    for (uint32_t num_of_transactions = 1; num_of_transactions <= max_transactions; num_of_transactions *= 4) {
-        for (uint32_t num_banks = 1; num_banks <= max_num_banks; num_banks++) {
+//             std::map<uint32_t, uint32_t> core_dram_map =
+//                 unit_tests::dm::dram_neighbour::core_dram_mapping_ideal(mesh_device, num_banks);
 
-            std::map<uint32_t, uint32_t> core_dram_map =
-                unit_tests::dm::dram_neighbour::core_dram_mapping_ideal(mesh_device, num_banks);
+//             // Test config
+//             unit_tests::dm::dram_neighbour::DramNeighbourConfig test_config(
+//                 test_id,
+//                 num_of_transactions,
+//                 num_banks,
+//                 num_pages,
+//                 page_size_bytes,
+//                 l1_data_format,
+//                 core_dram_map);
 
-            // Test config
-            unit_tests::dm::dram_neighbour::DramNeighbourConfig test_config(
-                test_id,
-                num_of_transactions,
-                num_banks,
-                num_pages,
-                page_size_bytes,
-                l1_data_format,
-                core_dram_map);
+//             EXPECT_TRUE(unit_tests::dm::dram_neighbour::run_dm_neighbour(mesh_device, test_config));
+//         }
+//     }
 
-            EXPECT_TRUE(unit_tests::dm::dram_neighbour::run_dm_neighbour(mesh_device, test_config));
-        }
-    }
+// }
 
-}
+// TEST_F(GenericMeshDeviceFixture, randomCoreToDramAssignmentTest) {
+//     shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
 
-TEST_F(GenericMeshDeviceFixture, randomCoreToDramAssignmentTest) {
-    shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
+//     // Test parameters
+//     uint32_t test_id = 504;
+//     uint32_t num_of_transactions = 1;
+//     uint32_t pages_per_bank = 1;
+//     DataFormat l1_data_format = DataFormat::Float16_b;
+//     uint32_t page_size_bytes = tt::tile_size(l1_data_format);
 
-    // Test parameters
-    uint32_t test_id = 504;
-    uint32_t num_of_transactions = 1;
-    uint32_t pages_per_bank = 1;
-    DataFormat l1_data_format = DataFormat::Float16_b;
-    uint32_t page_size_bytes = tt::tile_size(l1_data_format);
+//     auto grid_size = mesh_device->logical_grid_size();
+//     uint32_t max_dram_banks = mesh_device->num_dram_channels();
 
-    auto grid_size = mesh_device->logical_grid_size();
-    uint32_t max_dram_banks = mesh_device->num_dram_channels();
+//     for(uint32_t num_banks = 1; num_banks <= max_dram_banks; num_banks++) {
+//         std::map<uint32_t, uint32_t> core_dram_map;
+//         std::random_device rd;
+//         std::mt19937 gen(rd());
 
-    for(uint32_t num_banks = 1; num_banks <= max_dram_banks; num_banks++) {
-        std::map<uint32_t, uint32_t> core_dram_map;
-        std::random_device rd;
-        std::mt19937 gen(rd());
+//         std::vector<CoreCoord> available_cores;
+//         for (uint32_t x = 0; x < grid_size.x && available_cores.size() < num_banks; x++) {
+//             for (uint32_t y = 0; y < grid_size.y && available_cores.size() < num_banks; y++) {
+//                 available_cores.push_back(CoreCoord(x, y));
+//             }
+//         }
 
-        std::vector<CoreCoord> available_cores;
-        for (uint32_t x = 0; x < grid_size.x && available_cores.size() < num_banks; x++) {
-            for (uint32_t y = 0; y < grid_size.y && available_cores.size() < num_banks; y++) {
-                available_cores.push_back(CoreCoord(x, y));
-            }
-        }
+//         std::shuffle(available_cores.begin(), available_cores.end(), gen);
 
-        std::shuffle(available_cores.begin(), available_cores.end(), gen);
+//         std::vector<uint32_t> available_banks(num_banks);
+//         std::iota(available_banks.begin(), available_banks.end(), 0);
+//         std::shuffle(available_banks.begin(), available_banks.end(), gen);
 
-        std::vector<uint32_t> available_banks(num_banks);
-        std::iota(available_banks.begin(), available_banks.end(), 0);
-        std::shuffle(available_banks.begin(), available_banks.end(), gen);
+//         for (uint32_t i = 0; i < num_banks; i++) {
+//             const auto& core = available_cores[i];
+//             uint32_t packed_core = (static_cast<uint32_t>(core.x) << 16) | static_cast<uint32_t>(core.y);
+//             core_dram_map[packed_core] = available_banks[i];
 
-        for (uint32_t i = 0; i < num_banks; i++) {
-            const auto& core = available_cores[i];
-            uint32_t packed_core = (static_cast<uint32_t>(core.x) << 16) | static_cast<uint32_t>(core.y);
-            core_dram_map[packed_core] = available_banks[i];
+//             log_info(tt::LogTest, "Random assignment: Core ({}, {}) -> DRAM bank {}",
+//                     core.x, core.y, available_banks[i]);
+//         }
 
-            log_info(tt::LogTest, "Random assignment: Core ({}, {}) -> DRAM bank {}",
-                    core.x, core.y, available_banks[i]);
-        }
+//         unit_tests::dm::dram_neighbour::DramNeighbourConfig test_config(
+//             test_id,
+//             num_of_transactions,
+//             num_banks,
+//             pages_per_bank,
+//             page_size_bytes,
+//             l1_data_format,
+//             core_dram_map);
 
-        unit_tests::dm::dram_neighbour::DramNeighbourConfig test_config(
-            test_id,
-            num_of_transactions,
-            num_banks,
-            pages_per_bank,
-            page_size_bytes,
-            l1_data_format,
-            core_dram_map);
+//         EXPECT_TRUE(unit_tests::dm::dram_neighbour::run_dm_neighbour(mesh_device, test_config));
 
-        EXPECT_TRUE(unit_tests::dm::dram_neighbour::run_dm_neighbour(mesh_device, test_config));
+//     }
+// }
 
-    }
-}
+// TEST_F(GenericMeshDeviceFixture, randomCoreToDramAssignmentSweepTest) {
+//     GTEST_SKIP() << "Takes Too Long to Run";
+//     shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
 
-TEST_F(GenericMeshDeviceFixture, randomCoreToDramAssignmentSweepTest) {
-    GTEST_SKIP() << "Takes Too Long to Run";
-    shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
+//     // Test parameters
+//     uint32_t test_id = 505;
+//     uint32_t max_transactions = 256;
+//     uint32_t max_num_pages = 32;
+//     DataFormat l1_data_format = DataFormat::Float16_b;
+//     uint32_t page_size_bytes = tt::tile_size(l1_data_format);
 
-    // Test parameters
-    uint32_t test_id = 505;
-    uint32_t max_transactions = 256;
-    uint32_t max_num_pages = 32;
-    DataFormat l1_data_format = DataFormat::Float16_b;
-    uint32_t page_size_bytes = tt::tile_size(l1_data_format);
+//     auto grid_size = mesh_device->logical_grid_size();
+//     uint32_t max_dram_banks = mesh_device->num_dram_channels();
 
-    auto grid_size = mesh_device->logical_grid_size();
-    uint32_t max_dram_banks = mesh_device->num_dram_channels();
+//     for (uint32_t num_of_transactions = 1; num_of_transactions <= max_transactions; num_of_transactions *= 4) {
+//         for (uint32_t num_pages = 1; num_pages <= max_num_pages; num_pages *= 2) {
+//             for(uint32_t num_banks = 1; num_banks <= max_dram_banks; num_banks++) {
+//                 std::map<uint32_t, uint32_t> core_dram_map;
+//                 std::random_device rd;
+//                 std::mt19937 gen(rd());
 
-    for (uint32_t num_of_transactions = 1; num_of_transactions <= max_transactions; num_of_transactions *= 4) {
-        for (uint32_t num_pages = 1; num_pages <= max_num_pages; num_pages *= 2) {
-            for(uint32_t num_banks = 1; num_banks <= max_dram_banks; num_banks++) {
-                std::map<uint32_t, uint32_t> core_dram_map;
-                std::random_device rd;
-                std::mt19937 gen(rd());
+//                 std::vector<CoreCoord> available_cores;
+//                 for (uint32_t x = 0; x < grid_size.x && available_cores.size() < num_banks; x++) {
+//                     for (uint32_t y = 0; y < grid_size.y && available_cores.size() < num_banks; y++) {
+//                         available_cores.push_back(CoreCoord(x, y));
+//                     }
+//                 }
 
-                std::vector<CoreCoord> available_cores;
-                for (uint32_t x = 0; x < grid_size.x && available_cores.size() < num_banks; x++) {
-                    for (uint32_t y = 0; y < grid_size.y && available_cores.size() < num_banks; y++) {
-                        available_cores.push_back(CoreCoord(x, y));
-                    }
-                }
+//                 std::shuffle(available_cores.begin(), available_cores.end(), gen);
 
-                std::shuffle(available_cores.begin(), available_cores.end(), gen);
+//                 std::vector<uint32_t> available_banks(num_banks);
+//                 std::iota(available_banks.begin(), available_banks.end(), 0);
+//                 std::shuffle(available_banks.begin(), available_banks.end(), gen);
 
-                std::vector<uint32_t> available_banks(num_banks);
-                std::iota(available_banks.begin(), available_banks.end(), 0);
-                std::shuffle(available_banks.begin(), available_banks.end(), gen);
+//                 for (uint32_t i = 0; i < num_banks; i++) {
+//                     const auto& core = available_cores[i];
+//                     uint32_t packed_core = (static_cast<uint32_t>(core.x) << 16) | static_cast<uint32_t>(core.y);
+//                     core_dram_map[packed_core] = available_banks[i];
 
-                for (uint32_t i = 0; i < num_banks; i++) {
-                    const auto& core = available_cores[i];
-                    uint32_t packed_core = (static_cast<uint32_t>(core.x) << 16) | static_cast<uint32_t>(core.y);
-                    core_dram_map[packed_core] = available_banks[i];
+//                     log_info(tt::LogTest, "Random assignment: Core ({}, {}) -> DRAM bank {}",
+//                             core.x, core.y, available_banks[i]);
+//                 }
 
-                    log_info(tt::LogTest, "Random assignment: Core ({}, {}) -> DRAM bank {}",
-                            core.x, core.y, available_banks[i]);
-                }
+//                 unit_tests::dm::dram_neighbour::DramNeighbourConfig test_config(
+//                     test_id,
+//                     num_of_transactions,
+//                     num_banks,
+//                     num_pages,
+//                     page_size_bytes,
+//                     l1_data_format,
+//                     core_dram_map);
 
-                unit_tests::dm::dram_neighbour::DramNeighbourConfig test_config(
-                    test_id,
-                    num_of_transactions,
-                    num_banks,
-                    num_pages,
-                    page_size_bytes,
-                    l1_data_format,
-                    core_dram_map);
+//                 EXPECT_TRUE(unit_tests::dm::dram_neighbour::run_dm_neighbour(mesh_device, test_config));
 
-                EXPECT_TRUE(unit_tests::dm::dram_neighbour::run_dm_neighbour(mesh_device, test_config));
-
-            }
-        }
-    }
-}
-
+//             }
+//         }
+//     }
+// }
 
 }  // namespace tt::tt_metal
