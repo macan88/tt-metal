@@ -156,7 +156,7 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
         tt::tt_metal::SetRuntimeArgs(program, reader_kernel, worker_cores[i], core_runtime_args);
     }
 
-    // log_info(tt::LogTest, "Running Neighbour Read Test ID: {}, Run ID: {}", test_config.test_id, runtime_host_id);
+    log_info(tt::LogTest, "Running Neighbour Read Test ID: {}, Run ID: {}", test_config.test_id, runtime_host_id);
     program.set_runtime_id(runtime_host_id++);
 
 
@@ -185,7 +185,7 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
         IndexRange cur_indices = dram_index_map.at(dram_bank_id);
         log_info(
             tt::LogTest,
-            "line 175: Core ({}, {}), DRAM bank {}, Golden data indices: [{} - {})",
+            "line 187: Core ({}, {}), DRAM bank {}, Golden data indices: [{} - {})",
             worker_cores[i].x,
             worker_cores[i].y,
             dram_bank_id,
@@ -268,24 +268,29 @@ std::map<uint32_t, IndexRange> get_golden_index_ranges(
     return index_ranges;
 }
 
-void add_neighbour_cores_dram_mapping(
-    std::map<uint32_t, uint32_t>& core_dram_map, const shared_ptr<distributed::MeshDevice>& mesh_device) {
+std::map<uint32_t, uint32_t> add_neighbour_cores_dram_mapping(
+    const std::map<uint32_t, uint32_t>& core_dram_map, const shared_ptr<distributed::MeshDevice>& mesh_device) {
+    std::map<uint32_t, uint32_t> updated_map = core_dram_map;
     CoreCoord grid_size = mesh_device->logical_grid_size();
     for (const auto& [key, value] : core_dram_map) {
         uint32_t cur_x = static_cast<uint32_t>(key >> 16);
         uint32_t cur_y = static_cast<uint32_t>(key & 0xFFFF);
         uint32_t dram_bank_id = value;
 
-        if (cur_x + 1 > 0 && cur_x + 1 < grid_size.x) {
-            uint32_t right_core_key = ((cur_x + 1) << 16) | cur_y;
-            core_dram_map[right_core_key] = dram_bank_id;
+        uint32_t right_core_x = cur_x >= grid_size.x - 1 ? 0 : cur_x + 1;
+        uint32_t left_core_x = cur_x == 0 ? grid_size.x - 1 : cur_x - 1;
+
+        uint32_t right_core_key = (right_core_x << 16) | cur_y;
+        if (core_dram_map.find(right_core_key) == core_dram_map.end()) {
+            updated_map[right_core_key] = dram_bank_id;
         }
 
-        if (cur_x - 1 >= 0 && cur_x - 1 < grid_size.x) {
-            uint32_t left_core_key = ((cur_x - 1) << 16) | cur_y;
-            core_dram_map[left_core_key] = dram_bank_id;
+        uint32_t left_core_key = (left_core_x << 16) | cur_y;
+        if (core_dram_map.find(left_core_key) == core_dram_map.end()) {
+            updated_map[left_core_key] = dram_bank_id;
         }
     }
+    return updated_map;
 }
 
 void print_detailed_comparision(const vector<uint32_t>& packed_golden, const vector<uint32_t>& packed_output) {
@@ -341,6 +346,20 @@ using unit_tests::dm::dram_neighbour::run_dm_neighbour;
 using IndexRange = unit_tests::dm::dram_neighbour::IndexRange;
 using DramNeighbourConfig = unit_tests::dm::dram_neighbour::DramNeighbourConfig;
 
+TEST_F(GenericMeshDeviceFixture, idealCloestSingleNeighbour) {
+    shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
+
+    uint32_t num_banks = mesh_device->num_dram_channels();
+    std::map<uint32_t, uint32_t> core_dram_map = core_dram_mapping_ideal(mesh_device, num_banks);
+
+    for (const auto& [key, value] : core_dram_map) {
+        CoreCoord core{static_cast<uint16_t>(key >> 16), static_cast<uint16_t>(key & 0xFFFF)};
+        log_info(tt::LogTest, "line 345: Core ({}, {}) assigned to DRAM bank {}", core.x, core.y, value);
+    }
+
+    EXPECT_TRUE(true);
+}
+
 TEST_F(GenericMeshDeviceFixture, idealClosestNeighbourTest) {
 
     shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
@@ -351,16 +370,16 @@ TEST_F(GenericMeshDeviceFixture, idealClosestNeighbourTest) {
     uint32_t pages_per_bank = 1;
     DataFormat l1_data_format = DataFormat::Float16_b;
     uint32_t page_size_bytes = tt::tile_size(l1_data_format);
-    std::map<uint32_t, uint32_t> core_dram_map = core_dram_mapping_ideal(mesh_device, num_banks);
+    std::map<uint32_t, uint32_t> one_to_one_ideal_map = core_dram_mapping_ideal(mesh_device, num_banks);
 
-    add_neighbour_cores_dram_mapping(core_dram_map, mesh_device);
+    std::map<uint32_t, uint32_t> core_dram_map = add_neighbour_cores_dram_mapping(one_to_one_ideal_map, mesh_device);
 
     std::map<uint32_t, IndexRange> dram_index_map =
         get_golden_index_ranges(core_dram_map, num_banks * pages_per_bank * page_size_bytes, num_banks);
 
     for(const auto& [key, value] : core_dram_map) {
         CoreCoord core{static_cast<uint16_t>(key >> 16), static_cast<uint16_t>(key & 0xFFFF)};
-        log_info(tt::LogTest, "line 268: Core ({}, {}) assigned to DRAM bank {}", core.x, core.y, value);
+        log_info(tt::LogTest, "line 377: Core ({}, {}) assigned to DRAM bank {}", core.x, core.y, value);
     }
 
     DramNeighbourConfig test_config(
@@ -385,9 +404,9 @@ TEST_F(GenericMeshDeviceFixture, numPagesSweepClosestNeighbourTest) {
     uint32_t max_transactions = 256;
     DataFormat l1_data_format = DataFormat::Float16_b;
     uint32_t page_size_bytes = tt::tile_size(l1_data_format) << 2;
-    std::map<uint32_t, uint32_t> core_dram_map = core_dram_mapping_ideal(mesh_device, num_banks);
+    std::map<uint32_t, uint32_t> one_to_one_ideal_map = core_dram_mapping_ideal(mesh_device, num_banks);
 
-    add_neighbour_cores_dram_mapping(core_dram_map, mesh_device);
+    std::map<uint32_t, uint32_t> core_dram_map = add_neighbour_cores_dram_mapping(one_to_one_ideal_map, mesh_device);
 
     for (uint32_t num_of_transactions = 1; num_of_transactions <= max_transactions; num_of_transactions *= 4) {
         for (uint32_t num_pages = 1; num_pages <= max_num_pages; num_pages *= 2) {
@@ -421,9 +440,10 @@ TEST_F(GenericMeshDeviceFixture, numBankSweepClosestNeighbourTest) {
 
     for (uint32_t num_of_transactions = 1; num_of_transactions <= max_transactions; num_of_transactions *= 4) {
         for (uint32_t num_banks = 1; num_banks <= max_num_banks; num_banks++) {
-            std::map<uint32_t, uint32_t> core_dram_map = core_dram_mapping_ideal(mesh_device, num_banks);
+            std::map<uint32_t, uint32_t> one_to_one_ideal_map = core_dram_mapping_ideal(mesh_device, num_banks);
 
-            add_neighbour_cores_dram_mapping(core_dram_map, mesh_device);
+            std::map<uint32_t, uint32_t> core_dram_map =
+                add_neighbour_cores_dram_mapping(one_to_one_ideal_map, mesh_device);
 
             std::map<uint32_t, IndexRange> dram_index_map =
                 get_golden_index_ranges(core_dram_map, num_banks * num_pages * page_size_bytes, num_banks);
