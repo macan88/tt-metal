@@ -5,9 +5,8 @@ import ttnn
 
 
 class CCLManager:
-    def __init__(self, mesh_device, num_links, topology=ttnn.Topology.Ring):
+    def __init__(self, mesh_device, topology=ttnn.Topology.Ring):
         self.mesh_device = mesh_device
-        self.num_links = num_links
         self.topology = topology
 
         # Cache for ping pong buffers: key = (shape_tuple, dim, mesh_axis), value = [buffer1, buffer2]
