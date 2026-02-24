@@ -57,7 +57,7 @@ struct DramNeighbourConfig {
         dram_index_map(dram_index_map_) {}
 };
 
-void print_detailed_comparision(const vector<uint32_t>& packed_golden, const vector<uint32_t>& packed_output);
+void print_detailed_comparison(const vector<uint32_t>& packed_golden, const vector<uint32_t>& packed_output);
 
 
 /// @brief Reads from DRAM to L1 with each core reading only its adjacent bank
