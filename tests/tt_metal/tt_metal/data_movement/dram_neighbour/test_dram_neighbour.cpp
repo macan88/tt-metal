@@ -236,7 +236,7 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
             log_info(tt::LogTest, "Output vector");
             print_vector(unpack_vector<bfloat16, uint32_t>(cur_output));
 
-            unit_tests::dm::dram_neighbour::print_detailed_comparision(packed_golden, packed_output);
+            unit_tests::dm::dram_neighbour::print_detailed_comparison(packed_golden, packed_output);
             return is_equal;
         }
 
@@ -331,7 +331,7 @@ std::map<uint32_t, uint32_t> add_single_row_cores_dram_mapping(const shared_ptr<
     return mapping;
 }
 
-void print_detailed_comparision(const vector<uint32_t>& packed_golden, const vector<uint32_t>& packed_output) {
+void print_detailed_comparison(const vector<uint32_t>& packed_golden, const vector<uint32_t>& packed_output) {
     log_info(tt::LogTest, "\n\nDetailed Comparison:");
     log_info(tt::LogTest, "Total elements in Golden: {}, Total elements in Output: {}", packed_golden.size(), packed_output.size());
     size_t min_size = min(packed_golden.size(), packed_output.size());
@@ -341,7 +341,6 @@ void print_detailed_comparision(const vector<uint32_t>& packed_golden, const vec
         }
     }
 }
-
 
 }  // namespace unit_tests::dm::dram_neighbour
 
