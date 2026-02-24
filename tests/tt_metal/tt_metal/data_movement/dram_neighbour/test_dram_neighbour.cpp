@@ -76,7 +76,7 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
     std::vector<CoreCoord> dram_cores;
     unordered_set<uint32_t> dram_visited;
     for(const auto& [key, value] : core_dram_map) {
-        if (dram_visited.find(value) == dram_visited.end()) {
+        if (!dram_visited.contains(value)) {
             dram_cores.push_back(CoreCoord{static_cast<uint16_t>(value), 0});
             dram_visited.insert(value);
         }
