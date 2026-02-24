@@ -300,7 +300,7 @@ std::map<uint32_t, uint32_t> add_neighbour_cores_dram_mapping(
         uint32_t left_core_x = cur_x == 0 ? grid_size.x - 1 : cur_x - 1;
 
         uint32_t right_core_key = (right_core_x << 16) | cur_y;
-        if (core_dram_map.find(right_core_key) == core_dram_map.end()) {
+        if (!core_dram_map.contains(right_core_key)) {
             updated_map[right_core_key] = dram_bank_id;
         }
 
