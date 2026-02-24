@@ -275,7 +275,7 @@ std::map<uint32_t, IndexRange> get_golden_index_ranges(
     unordered_set<uint32_t> visited;
     uint32_t i = 0;
     for (const auto& [key, dram_bank_id] : core_dram_map) {
-        if (visited.find(dram_bank_id) == visited.end()) {
+        if (!visited.contains(dram_bank_id)) {
             uint32_t start_index = i * per_core_output_size_elements;
             uint32_t end_index = start_index + per_core_output_size_elements;
             index_ranges[dram_bank_id] = IndexRange{start_index, end_index};
