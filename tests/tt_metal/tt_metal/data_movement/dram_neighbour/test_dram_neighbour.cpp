@@ -312,6 +312,25 @@ std::map<uint32_t, uint32_t> add_neighbour_cores_dram_mapping(
     return updated_map;
 }
 
+std::map<uint32_t, uint32_t> add_single_row_cores_dram_mapping(const shared_ptr<distributed::MeshDevice>& mesh_device) {
+    std::map<uint32_t, uint32_t> mapping = core_dram_mapping_ideal(mesh_device, 1);
+    CoreCoord grid_size = mesh_device->logical_grid_size();
+
+    auto it = mapping.begin();
+    uint32_t cur_x = static_cast<uint32_t>(it->first >> 16);
+    uint32_t cur_y = static_cast<uint32_t>(it->first & 0xFFFF);
+    uint32_t dram_bank_id = it->second;
+
+    uint32_t next_x = cur_x >= grid_size.x - 1 ? 0 : cur_x + 1;
+    while (next_x != cur_x) {
+        uint32_t next_key = (next_x << 16) | cur_y;
+        mapping[next_key] = dram_bank_id;
+        next_x = next_x >= grid_size.x - 1 ? 0 : next_x + 1;
+    }
+
+    return mapping;
+}
+
 void print_detailed_comparision(const vector<uint32_t>& packed_golden, const vector<uint32_t>& packed_output) {
     log_info(tt::LogTest, "\n\nDetailed Comparison:");
     log_info(tt::LogTest, "Total elements in Golden: {}, Total elements in Output: {}", packed_golden.size(), packed_output.size());
@@ -359,6 +378,7 @@ TEST_F(GenericMeshDeviceFixture, printLogical2PhysicalMapping) {
 }
 
 using unit_tests::dm::dram_neighbour::add_neighbour_cores_dram_mapping;
+using unit_tests::dm::dram_neighbour::add_single_row_cores_dram_mapping;
 using unit_tests::dm::dram_neighbour::core_dram_mapping_ideal;
 using unit_tests::dm::dram_neighbour::get_golden_index_ranges;
 using unit_tests::dm::dram_neighbour::run_dm_neighbour;
@@ -468,6 +488,38 @@ TEST_F(GenericMeshDeviceFixture, numBankSweepClosestNeighbourTest) {
                 get_golden_index_ranges(core_dram_map, num_banks * num_pages * page_size_bytes, num_banks);
 
             // Test config
+            DramNeighbourConfig test_config(
+                test_id,
+                num_of_transactions,
+                num_banks,
+                num_pages,
+                page_size_bytes,
+                l1_data_format,
+                core_dram_map,
+                dram_index_map);
+
+            EXPECT_TRUE(run_dm_neighbour(mesh_device, test_config));
+        }
+    }
+}
+
+TEST_F(GenericMeshDeviceFixture, singleRowSweepClosestNeighbourTest) {
+    shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
+
+    uint32_t test_id = 505;
+    uint32_t num_banks = 1;
+    uint32_t max_num_pages = 32;
+    uint32_t max_transactions = 256;
+    DataFormat l1_data_format = DataFormat::Float16_b;
+    uint32_t page_size_bytes = tt::tile_size(l1_data_format);
+
+    std::map<uint32_t, uint32_t> core_dram_map = add_single_row_cores_dram_mapping(mesh_device);
+
+    for (uint32_t num_of_transactions = 1; num_of_transactions <= max_transactions; num_of_transactions *= 4) {
+        for (uint32_t num_pages = 1; num_pages <= max_num_pages; num_pages *= 2) {
+            std::map<uint32_t, IndexRange> dram_index_map =
+                get_golden_index_ranges(core_dram_map, num_banks * num_pages * page_size_bytes, num_banks);
+
             DramNeighbourConfig test_config(
                 test_id,
                 num_of_transactions,
