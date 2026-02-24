@@ -3,7 +3,7 @@
 #include "api/dataflow/dataflow_api.h"
 #include "tensix_types.h"
 #include "hw/inc/api/debug/dprint.h"
-// #include "impl/allocator/allocator.hpp"
+#include "barrier_sync.hpp"
 
 // DRAM to L1 read - Neighbour variant
 // Each core reads from exactly one adjacent DRAM bank (the one to its left)
@@ -11,6 +11,12 @@ void kernel_main() {
     uint32_t src_addr = get_arg_val<uint32_t>(0);
     uint32_t l1_addr = get_arg_val<uint32_t>(1);
     uint32_t bank_id = get_arg_val<uint32_t>(2);  // bank index for this core
+    // Barrier synchronization args
+    uint32_t barrier_sem_id = get_arg_val<uint32_t>(3);
+    uint32_t barrier_coord_x = get_arg_val<uint32_t>(4);
+    uint32_t barrier_coord_y = get_arg_val<uint32_t>(5);
+    uint32_t num_cores = get_arg_val<uint32_t>(6);
+    uint32_t local_barrier_addr = get_arg_val<uint32_t>(7);
 
     constexpr uint32_t num_of_transactions = get_compile_time_arg_val(0);
     constexpr uint32_t pages_per_bank = get_compile_time_arg_val(1);
@@ -24,6 +30,8 @@ void kernel_main() {
 
     uint32_t dst_addr = l1_addr;
 
+    barrier_sync(barrier_sem_id, barrier_coord_x, barrier_coord_y, num_cores, local_barrier_addr);
+
     {
         DeviceZoneScopedN("RISCV0");
         // Read only from assigned adjacent bank
@@ -36,19 +44,8 @@ void kernel_main() {
                 noc_async_read_one_packet_with_state(next_page_noc_addr, dst_addr);
                 dst_addr += page_size_bytes;
                 next_page_noc_addr += page_size_bytes;
-                // DPRINT << page_size_bytes << ENDL();
             }
         }
         noc_async_read_barrier();
-
-        // uint64_t dram_noc_addr = get_noc_addr_from_bank_id<dram>(dram_channel, dram_addr);
-
-        // {
-        //     DeviceZoneScopedN("RISCV1");
-        //     for (uint32_t i = 0; i < num_of_transactions; i++) {
-        //         noc_async_read(dram_noc_addr, local_l1_addr, bytes_per_transaction);
-        //     }
-        //     noc_async_read_barrier();
-        // }
     }
 }

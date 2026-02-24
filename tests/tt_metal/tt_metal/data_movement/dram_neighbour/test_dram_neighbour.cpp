@@ -141,18 +141,37 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
             .noc = NOC::RISCV_0_default,
             .compile_args = reader_compile_args});
 
+    // ===== Barrier synchronization setup =====
+    // CreateSemaphore allocates semaphores on all specified cores (same ID maps to same L1 offset).
+    // We only use the coordinator's semaphore - all cores increment it via NOC and poll until num_cores.
+    // Creating on all cores ensures get_semaphore(id) works correctly on every core.
+    CoreCoord coordinator_core = worker_cores[0];
+    CoreCoord coordinator_phys = device->worker_core_from_logical_core(coordinator_core);
+
+    uint32_t reader_barrier_sem_id = 0;
+    reader_barrier_sem_id = CreateSemaphore(program, core_range_set, 0);
+
     vector<uint32_t> l1_addr;
-    for(uint32_t i = 0; i < worker_cores.size(); i++) {
+    uint32_t num_cores = worker_cores.size();
+    for (uint32_t i = 0; i < num_cores; i++) {
         l1_addr.push_back(get_l1_address_and_size(mesh_device, worker_cores[i]).base_address);
     }
 
-
     // Set runtime args: each core reads its adjacent bank
-    for(uint32_t i = 0; i < worker_cores.size(); i++) {
+    for (uint32_t i = 0; i < num_cores; i++) {
         uint32_t dram_bank_id = core_dram_map.at((static_cast<uint32_t>(worker_cores[i].x) << 16) | static_cast<uint32_t>(worker_cores[i].y));
         // log_info(tt::LogTest, "line 130: Core ({}, {}), dram_bank_id {}",
         //  worker_cores[i].x, worker_cores[i].y, dram_bank_id);
-        std::vector<uint32_t> core_runtime_args = {input_buffer_address, l1_addr[i], dram_bank_id};
+        uint32_t local_barrier_addr = l1_addr[i] + total_size_bytes;
+        std::vector<uint32_t> core_runtime_args = {
+            input_buffer_address,
+            l1_addr[i],
+            dram_bank_id,
+            reader_barrier_sem_id,  // Semaphore ID, kernel will call get_semaphore() to get address
+            coordinator_phys.x,
+            coordinator_phys.y,
+            num_cores,
+            local_barrier_addr};
         tt::tt_metal::SetRuntimeArgs(program, reader_kernel, worker_cores[i], core_runtime_args);
     }
 
@@ -178,7 +197,7 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
     vector<uint32_t> cur_output;
     uint32_t per_core_output_size_bytes = total_size_bytes / test_config.num_banks;
 
-    for (uint32_t i = 0; i < worker_cores.size(); i++) {
+    for (uint32_t i = 0; i < num_cores; i++) {
         // golden data for current core's adjacent bank
         uint32_t key = (static_cast<uint32_t>(worker_cores[i].x) << 16) | static_cast<uint32_t>(worker_cores[i].y);
         uint32_t dram_bank_id = core_dram_map.at(key);
@@ -403,7 +422,7 @@ TEST_F(GenericMeshDeviceFixture, numPagesSweepClosestNeighbourTest) {
     uint32_t max_num_pages = 32;
     uint32_t max_transactions = 256;
     DataFormat l1_data_format = DataFormat::Float16_b;
-    uint32_t page_size_bytes = tt::tile_size(l1_data_format) << 2;
+    uint32_t page_size_bytes = tt::tile_size(l1_data_format);
     std::map<uint32_t, uint32_t> one_to_one_ideal_map = core_dram_mapping_ideal(mesh_device, num_banks);
 
     std::map<uint32_t, uint32_t> core_dram_map = add_neighbour_cores_dram_mapping(one_to_one_ideal_map, mesh_device);
