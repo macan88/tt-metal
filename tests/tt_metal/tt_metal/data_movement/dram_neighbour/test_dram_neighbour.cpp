@@ -305,7 +305,7 @@ std::map<uint32_t, uint32_t> add_neighbour_cores_dram_mapping(
         }
 
         uint32_t left_core_key = (left_core_x << 16) | cur_y;
-        if (core_dram_map.find(left_core_key) == core_dram_map.end()) {
+        if (!core_dram_map.contains(left_core_key)) {
             updated_map[left_core_key] = dram_bank_id;
         }
     }
