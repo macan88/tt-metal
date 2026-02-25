@@ -96,9 +96,7 @@ jobs:
               "model": "sdxl",
               "arch": "blackhole",
               "extra-tag": "pipeline-functional",
-              "cmd": "TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE=\"7,7\" pytest models/experimental/stable_diffusion_xl_base/tests/test_sdxl_accuracy.py --start-from=0 --num-prompts=2 -k \"device_encoders and device_vae and no_cfg_parallel\" && \
-                      TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE=\"7,7\" pytest models/experimental/stable_diffusion_xl_base/demo/demo_img2img.py -k \"device_vae and device_encoders and with_trace and no_cfg_parallel\" && \
-                      TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE=\"7,7\" pytest models/experimental/stable_diffusion_xl_base/demo/demo_inpainting.py -k \"device_vae and device_encoders and with_trace and no_cfg_parallel\"",
+              "cmd": "TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE=\"7,7\" pytest models/experimental/stable_diffusion_xl_base/tests/test_sdxl_accuracy.py --start-from=0 --num-prompts=2 -k \"device_encoders and device_vae and no_cfg_parallel\" && TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE=\"7,7\" pytest models/experimental/stable_diffusion_xl_base/demo/demo_img2img.py -k \"device_vae and device_encoders and with_trace and no_cfg_parallel\" && TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE=\"7,7\" pytest models/experimental/stable_diffusion_xl_base/demo/demo_inpainting.py -k \"device_vae and device_encoders and with_trace and no_cfg_parallel\"",
               "owner_id": "U09LK84G4TF",
               "owner_name": "Nikola Milicevic"
             }
