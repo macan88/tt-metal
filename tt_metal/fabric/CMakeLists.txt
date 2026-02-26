@@ -78,6 +78,7 @@ target_sources(
         serialization/port_descriptor_serialization.cpp
         ccl/ccl_common.cpp
         physical_system_descriptor.cpp
+        physical_system_discovery.cpp
         topology_mapper.cpp
         topology_mapper_utils.cpp
         topology_solver.cpp
