@@ -29,7 +29,7 @@ from models.experimental.stable_diffusion_xl_base.tests.test_common import (
     determinate_min_batch_size,
 )
 from models.common.utility_functions import profiler
-from models.experimental.stable_diffusion_xl_base.lora.lora_weights_manager import TtLoRAWeightsManager
+from models.experimental.stable_diffusion_xl_base.lora.tt_lora_weights_manager import TtLoRAWeightsManager
 
 
 @dataclass
@@ -82,7 +82,7 @@ class TtSDXLPipeline(LightweightModule):
         self.pipeline_config = pipeline_config
         self._reset_num_inference_steps()
 
-        self.lora_weights_manager = TtLoRAWeightsManager(self.ttnn_device, self.torch_pipeline)
+        self._lora_weights_manager = TtLoRAWeightsManager(self.ttnn_device, self.torch_pipeline)
 
         # Validate config parameters once at initialization
         self.__validate_config()
@@ -147,15 +147,15 @@ class TtSDXLPipeline(LightweightModule):
         self.tt_latents_shape = [B, C, H, W]
 
     def fuse_lora(self, lora_scale=1.0):
-        if self.lora_weights_manager.has_lora_adapter():
+        if self._lora_weights_manager.has_lora_adapter():
             logger.info("Fusing LoRA weights on TT device...")
-            self.lora_weights_manager.fuse_lora_weights(lora_scale=lora_scale)
+            self._lora_weights_manager.fuse_lora(lora_scale=lora_scale)
 
     def load_lora_weights(self, lora_path):
-        self.lora_weights_manager.load_lora_weights(lora_path)
+        self._lora_weights_manager.load_lora_weights(lora_path)
 
-    def rollback_base_weights(self):
-        self.lora_weights_manager.rollback_base_weights()
+    def unload_lora_weights(self):
+        self._lora_weights_manager.unload_lora_weights()
 
     def set_num_inference_steps(self, num_inference_steps: int):
         # When changing num_inference_steps, the timesteps and latents need to be recreated.
@@ -651,7 +651,7 @@ class TtSDXLPipeline(LightweightModule):
                 "unet",
                 model_config=self.tt_unet_model_config,
                 debug_mode=pipeline_config._debug_mode,
-                lora_weights_manager=self.lora_weights_manager,
+                lora_weights_manager=self._lora_weights_manager,
             )
             # Skip VAE for refiner pipelines
             self.tt_vae = (
