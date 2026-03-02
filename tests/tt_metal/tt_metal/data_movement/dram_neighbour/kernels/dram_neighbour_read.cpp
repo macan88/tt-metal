@@ -5,8 +5,6 @@
 #include "hw/inc/api/debug/dprint.h"
 #include "barrier_sync.hpp"
 
-// DRAM to L1 read - Neighbour variant
-// Each core reads from exactly one adjacent DRAM bank (the one to its left)
 void kernel_main() {
     uint32_t src_addr = get_arg_val<uint32_t>(0);
     uint32_t l1_addr = get_arg_val<uint32_t>(1);
