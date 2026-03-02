@@ -80,7 +80,6 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
             dram_cores.push_back(CoreCoord{static_cast<uint16_t>(value), 0});
             dram_visited.insert(value);
         }
-        // log_info(tt::LogTest, "line 67: dram_cores vector - DRAM bank {}", value);
     }
 
     // Buffer sharding: each bank's data to corresponding core
@@ -127,7 +126,6 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
     for(const auto [key, value] : core_dram_map) {
         CoreCoord core{static_cast<uint16_t>(key >> 16), static_cast<uint16_t>(key & 0xFFFF)};
         worker_cores.push_back(core);
-        // log_info(tt::LogTest, "line 114: worker_cores vector - Core ({}, {})", core.x, core.y);
     }
 
     CoreRangeSet core_range_set(worker_cores);
@@ -159,9 +157,8 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
 
     // Set runtime args: each core reads its adjacent bank
     for (uint32_t i = 0; i < num_cores; i++) {
-        uint32_t dram_bank_id = core_dram_map.at((static_cast<uint32_t>(worker_cores[i].x) << 16) | static_cast<uint32_t>(worker_cores[i].y));
-        // log_info(tt::LogTest, "line 130: Core ({}, {}), dram_bank_id {}",
-        //  worker_cores[i].x, worker_cores[i].y, dram_bank_id);
+        uint32_t dram_bank_id = core_dram_map.at(
+            (static_cast<uint32_t>(worker_cores[i].x) << 16) | static_cast<uint32_t>(worker_cores[i].y));
         uint32_t local_barrier_addr = l1_addr[i] + total_size_bytes;
         std::vector<uint32_t> core_runtime_args = {
             input_buffer_address,
@@ -175,7 +172,6 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
         tt::tt_metal::SetRuntimeArgs(program, reader_kernel, worker_cores[i], core_runtime_args);
     }
 
-    log_info(tt::LogTest, "Running Neighbour Read Test ID: {}, Run ID: {}", test_config.test_id, runtime_host_id);
     program.set_runtime_id(runtime_host_id++);
 
 
@@ -202,14 +198,6 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
         uint32_t key = (static_cast<uint32_t>(worker_cores[i].x) << 16) | static_cast<uint32_t>(worker_cores[i].y);
         uint32_t dram_bank_id = core_dram_map.at(key);
         IndexRange cur_indices = dram_index_map.at(dram_bank_id);
-        log_info(
-            tt::LogTest,
-            "line 187: Core ({}, {}), DRAM bank {}, Golden data indices: [{} - {})",
-            worker_cores[i].x,
-            worker_cores[i].y,
-            dram_bank_id,
-            cur_indices.start,
-            cur_indices.end);
         for (int j = cur_indices.start; j < cur_indices.end; j++) {
             packed_output.push_back(packed_golden[j]);
         }
@@ -236,7 +224,6 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
             log_info(tt::LogTest, "Output vector");
             print_vector(unpack_vector<bfloat16, uint32_t>(cur_output));
 
-            unit_tests::dm::dram_neighbour::print_detailed_comparison(packed_golden, packed_output);
             return is_equal;
         }
 
@@ -331,50 +318,7 @@ std::map<uint32_t, uint32_t> add_single_row_cores_dram_mapping(const shared_ptr<
     return mapping;
 }
 
-void print_detailed_comparison(const vector<uint32_t>& packed_golden, const vector<uint32_t>& packed_output) {
-    log_info(tt::LogTest, "\n\nDetailed Comparison:");
-    log_info(tt::LogTest, "Total elements in Golden: {}, Total elements in Output: {}", packed_golden.size(), packed_output.size());
-    size_t min_size = min(packed_golden.size(), packed_output.size());
-    for (size_t i = 0; i < min_size; i++) {
-        if (packed_golden[i] != packed_output[i]) {
-            log_info(tt::LogTest, "Index {}: Golden = {}, Output = {}", i, packed_golden[i], packed_output[i]);
-        }
-    }
-}
-
 }  // namespace unit_tests::dm::dram_neighbour
-
-TEST_F(GenericMeshDeviceFixture, printLogical2PhysicalMapping) {
-    shared_ptr<distributed::MeshDevice> device = get_mesh_device();
-    auto mesh_device = device->get_devices().front();
-
-    CoreCoord grid_size = mesh_device->logical_grid_size();
-
-    for (uint32_t x = 0; x < grid_size.x; x++) {
-        for (uint32_t y = 0; y < grid_size.y; y++) {
-            CoreCoord logical_core(x, y);
-            CoreCoord physical_core = mesh_device->worker_core_from_logical_core(logical_core);
-            CoreCoord noc0_coord = mesh_device->virtual_noc0_coordinate(0, physical_core);
-            log_info(tt::LogTest, "Logical Core: ({}, {}), Physical Core: ({}, {}), Noc0 Core: ({}, {}) ",
-                     logical_core.x, logical_core.y, physical_core.x, physical_core.y, noc0_coord.x, noc0_coord.y);
-        }
-    }
-
-    std::vector<CoreCoord> dram_physical_coords;
-    uint32_t num_dram_banks = mesh_device->num_dram_channels();
-    for (uint32_t bank_id = 0; bank_id < num_dram_banks; bank_id++) {
-        uint32_t dram_channel = mesh_device->allocator_impl()->get_dram_channel_from_bank_id(bank_id);
-        CoreCoord logical_dram_core = mesh_device->logical_core_from_dram_channel(dram_channel);
-        const metal_SocDescriptor& soc_desc =
-            tt::tt_metal::MetalContext::instance().get_cluster().get_soc_desc(mesh_device->id());
-        CoreCoord physical_dram_core = soc_desc.get_physical_dram_core_from_logical(logical_dram_core);
-        dram_physical_coords.push_back(physical_dram_core);
-        log_info(tt::LogTest, "Bank ID: {}, Dram Channel: {}, Logical DRAM Core: ({}, {}), Physical DRAM Core: ({}, {}) ",
-                 bank_id, dram_channel, logical_dram_core.x, logical_dram_core.y, physical_dram_core.x, physical_dram_core.y);
-    }
-
-    EXPECT_TRUE(true);
-}
 
 using unit_tests::dm::dram_neighbour::add_neighbour_cores_dram_mapping;
 using unit_tests::dm::dram_neighbour::add_single_row_cores_dram_mapping;
@@ -384,22 +328,7 @@ using unit_tests::dm::dram_neighbour::run_dm_neighbour;
 using IndexRange = unit_tests::dm::dram_neighbour::IndexRange;
 using DramNeighbourConfig = unit_tests::dm::dram_neighbour::DramNeighbourConfig;
 
-TEST_F(GenericMeshDeviceFixture, idealCloestSingleNeighbour) {
-    shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
-
-    uint32_t num_banks = mesh_device->num_dram_channels();
-    std::map<uint32_t, uint32_t> core_dram_map = core_dram_mapping_ideal(mesh_device, num_banks);
-
-    for (const auto& [key, value] : core_dram_map) {
-        CoreCoord core{static_cast<uint16_t>(key >> 16), static_cast<uint16_t>(key & 0xFFFF)};
-        log_info(tt::LogTest, "line 345: Core ({}, {}) assigned to DRAM bank {}", core.x, core.y, value);
-    }
-
-    EXPECT_TRUE(true);
-}
-
-TEST_F(GenericMeshDeviceFixture, idealClosestNeighbourTest) {
-
+TEST_F(GenericMeshDeviceFixture, TensixDataMovementDramNeighbourDirectedIdeal) {
     shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
 
     uint32_t test_id = 502;
@@ -417,7 +346,6 @@ TEST_F(GenericMeshDeviceFixture, idealClosestNeighbourTest) {
 
     for(const auto& [key, value] : core_dram_map) {
         CoreCoord core{static_cast<uint16_t>(key >> 16), static_cast<uint16_t>(key & 0xFFFF)};
-        log_info(tt::LogTest, "line 377: Core ({}, {}) assigned to DRAM bank {}", core.x, core.y, value);
     }
 
     DramNeighbourConfig test_config(
@@ -433,7 +361,7 @@ TEST_F(GenericMeshDeviceFixture, idealClosestNeighbourTest) {
     EXPECT_TRUE(run_dm_neighbour(mesh_device, test_config));
 }
 
-TEST_F(GenericMeshDeviceFixture, numPagesSweepClosestNeighbourTest) {
+TEST_F(GenericMeshDeviceFixture, TensixDataMovementDramNeighbourNumPagesSweep) {
     shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
 
     uint32_t test_id = 503;
@@ -466,7 +394,7 @@ TEST_F(GenericMeshDeviceFixture, numPagesSweepClosestNeighbourTest) {
     }
 }
 
-TEST_F(GenericMeshDeviceFixture, numBankSweepClosestNeighbourTest) {
+TEST_F(GenericMeshDeviceFixture, TensixDataMovementDramNeighbourNumBankSweep) {
     shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
 
     uint32_t test_id = 504;
@@ -502,7 +430,7 @@ TEST_F(GenericMeshDeviceFixture, numBankSweepClosestNeighbourTest) {
     }
 }
 
-TEST_F(GenericMeshDeviceFixture, singleRowSweepClosestNeighbourTest) {
+TEST_F(GenericMeshDeviceFixture, TensixDataMovementDramNeighbourSingleRowSweep) {
     shared_ptr<distributed::MeshDevice> mesh_device = get_mesh_device();
 
     uint32_t test_id = 505;
