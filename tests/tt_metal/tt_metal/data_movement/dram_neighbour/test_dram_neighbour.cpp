@@ -318,7 +318,7 @@ std::map<uint32_t, uint32_t> add_single_row_cores_dram_mapping(const shared_ptr<
 }
 
 bool run_single_test(
-    shared_ptr<distributed::MeshDevice> mesh_device,
+    const shared_ptr<distributed::MeshDevice>& mesh_device,
     uint32_t test_id,
     uint32_t num_of_transactions,
     uint32_t num_banks,
