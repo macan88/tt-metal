@@ -9,8 +9,8 @@
 #include <tt-metalium/mesh_buffer.hpp>
 #include <distributed/mesh_device_impl.hpp>
 #include "tt_metal/impl/allocator/allocator.hpp"
-
-
+#include "tt_metal/impl/allocator/allocator.hpp"
+#include "tt_metal/impl/dispatch/dispatch_query_manager.hpp"
 
 namespace tt::tt_metal {
 
@@ -170,7 +170,7 @@ bool run_dm_neighbour(const shared_ptr<distributed::MeshDevice>& mesh_device, co
         tt::tt_metal::SetRuntimeArgs(program, reader_kernel, worker_cores[i], core_runtime_args);
     }
 
-    log_info(tt::LogTest, "Running Neighbour Read Test ID: {}, Run ID: {}", test_config.test_id, runtime_host_id);
+    log_info(tt::LogTest, "Running Test ID: {}, Run ID: {}", test_config.test_id, runtime_host_id);
     program.set_runtime_id(runtime_host_id++);
 
 
@@ -277,6 +277,12 @@ std::map<uint32_t, uint32_t> add_neighbour_cores_dram_mapping(
     const std::map<uint32_t, uint32_t>& core_dram_map, const shared_ptr<distributed::MeshDevice>& mesh_device) {
     std::map<uint32_t, uint32_t> updated_map = core_dram_map;
     CoreCoord grid_size = mesh_device->logical_grid_size();
+
+    const auto& dispatch_cores =
+        tt::tt_metal::MetalContext::instance().get_dispatch_query_manager().get_logical_dispatch_cores_on_user_chips();
+
+    std::unordered_set<CoreCoord> dispatch_set(dispatch_cores.begin(), dispatch_cores.end());
+
     for (const auto& [key, value] : core_dram_map) {
         uint32_t cur_x = static_cast<uint32_t>(key >> 16);
         uint32_t cur_y = static_cast<uint32_t>(key & 0xFFFF);
@@ -286,12 +292,14 @@ std::map<uint32_t, uint32_t> add_neighbour_cores_dram_mapping(
         uint32_t left_core_x = cur_x == 0 ? grid_size.x - 1 : cur_x - 1;
 
         uint32_t right_core_key = (right_core_x << 16) | cur_y;
-        if (!core_dram_map.contains(right_core_key)) {
+        if (!core_dram_map.contains(right_core_key) &&
+            !dispatch_set.contains(CoreCoord{static_cast<uint16_t>(right_core_x), static_cast<uint16_t>(cur_y)})) {
             updated_map[right_core_key] = dram_bank_id;
         }
 
         uint32_t left_core_key = (left_core_x << 16) | cur_y;
-        if (!core_dram_map.contains(left_core_key)) {
+        if (!core_dram_map.contains(left_core_key) &&
+            !dispatch_set.contains(CoreCoord{static_cast<uint16_t>(left_core_x), static_cast<uint16_t>(cur_y)})) {
             updated_map[left_core_key] = dram_bank_id;
         }
     }
@@ -302,6 +310,11 @@ std::map<uint32_t, uint32_t> add_single_row_cores_dram_mapping(const shared_ptr<
     std::map<uint32_t, uint32_t> mapping = core_dram_mapping_ideal(mesh_device, 1);
     CoreCoord grid_size = mesh_device->logical_grid_size();
 
+    const auto& dispatch_cores =
+        tt::tt_metal::MetalContext::instance().get_dispatch_query_manager().get_logical_dispatch_cores_on_user_chips();
+
+    std::unordered_set<CoreCoord> dispatch_set(dispatch_cores.begin(), dispatch_cores.end());
+
     auto it = mapping.begin();
     uint32_t cur_x = static_cast<uint32_t>(it->first >> 16);
     uint32_t cur_y = static_cast<uint32_t>(it->first & 0xFFFF);
@@ -310,7 +323,9 @@ std::map<uint32_t, uint32_t> add_single_row_cores_dram_mapping(const shared_ptr<
     uint32_t next_x = cur_x >= grid_size.x - 1 ? 0 : cur_x + 1;
     while (next_x != cur_x) {
         uint32_t next_key = (next_x << 16) | cur_y;
-        mapping[next_key] = dram_bank_id;
+        if (!dispatch_set.contains(CoreCoord{static_cast<uint16_t>(next_x), static_cast<uint16_t>(cur_y)})) {
+            mapping[next_key] = dram_bank_id;
+        }
         next_x = next_x >= grid_size.x - 1 ? 0 : next_x + 1;
     }
 
