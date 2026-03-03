@@ -1,11 +1,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-PCC test: TTNN Swin-L MLP (FFN) vs PyTorch reference.
-Tests FFN at stage 0 block 0.
-"""
-
 import pytest
 import torch
 import ttnn
@@ -27,20 +22,16 @@ def test_ttnn_swin_mlp_pcc(device, swin_l_ref, swin_l_ckpt_path, reset_seeds):
 
     stage_idx, block_idx = 0, 0
 
-    # Get input
     torch_input = torch.rand(1, 3, DEFAULT_INPUT_H, DEFAULT_INPUT_W)
     x_nhwc, hw = swin_l_ref.get_patch_embed_output(torch_input)
 
-    # PyTorch reference FFN
     torch_out = swin_l_ref.forward_ffn(x_nhwc, hw, stage_idx, block_idx)
 
-    # TTNN
     params = load_backbone_weights(swin_l_ckpt_path, device)
     block_params = params["stages"][stage_idx]["blocks"][block_idx]
 
     ttnn_mlp = TtSwinMLP(device, block_params["mlp"], dim=SWIN_L_EMBED_DIM, mlp_ratio=4.0)
 
-    # Apply norm2 first (same as reference)
     ttnn_x = ttnn.from_torch(
         x_nhwc, dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT, device=device, memory_config=ttnn.DRAM_MEMORY_CONFIG
     )

@@ -1,11 +1,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-PCC test: TTNN Swin-L shifted window attention vs PyTorch reference.
-Tests attention at stage 0 block 0 (no shift) and block 1 (with shift).
-"""
-
 import pytest
 import torch
 import ttnn
@@ -34,14 +29,11 @@ def test_ttnn_swin_attention_pcc(device, swin_l_ref, swin_l_ckpt_path, block_idx
     stage_idx = 0
     ws = SWIN_L_WINDOW_SIZE
 
-    # Get PyTorch input (output of patch_embed)
     torch_input = torch.rand(1, 3, DEFAULT_INPUT_H, DEFAULT_INPUT_W)
     x_nhwc, hw = swin_l_ref.get_patch_embed_output(torch_input)
 
-    # PyTorch reference attention
     torch_out = swin_l_ref.forward_attention(x_nhwc, hw, stage_idx, block_idx)
 
-    # TTNN
     params = load_backbone_weights(swin_l_ckpt_path, device)
     attn_masks = compute_attn_masks(DEFAULT_INPUT_H, DEFAULT_INPUT_W, 4, ws, device)
     block_params = params["stages"][stage_idx]["blocks"][block_idx]
@@ -57,7 +49,7 @@ def test_ttnn_swin_attention_pcc(device, swin_l_ref, swin_l_ckpt_path, block_idx
         attn_mask=attn_masks[stage_idx],
     )
 
-    # Apply norm1 first (same as reference does)
+    # Apply norm1
     ttnn_x = ttnn.from_torch(
         x_nhwc, dtype=ttnn.bfloat16, layout=ttnn.ROW_MAJOR_LAYOUT, device=device, memory_config=ttnn.DRAM_MEMORY_CONFIG
     )

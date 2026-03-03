@@ -1,18 +1,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-PCC test: TTNN Swin-L backbone (e2e) vs PyTorch reference.
-Tests the complete 4-stage backbone producing 4 multi-scale feature maps.
-
-This is a standalone, reusable Swin-L backbone test — anyone wanting to
-verify the TTNN Swin-L implementation can run this.
-
-Run with:
-  export PYTHONPATH=/home/ubuntu/tt-metal:$HOME/.local/lib/python3.10/site-packages
-  pytest models/experimental/swin_l/tests/pcc/test_ttnn_backbone.py -v
-"""
-
 import pytest
 import torch
 import ttnn
@@ -32,28 +20,16 @@ from loguru import logger
 
 @pytest.mark.parametrize("device_params", [{"l1_small_size": 32768}], indirect=True)
 def test_ttnn_swin_l_backbone_e2e(device, swin_l_ref, swin_l_ckpt_path, reset_seeds):
-    """
-    Full Swin-L backbone: 4 stages -> 4 multi-scale NCHW feature maps.
-    Compares each stage output against PyTorch mmdet reference.
-
-    PCC results (bfloat16, DRAM):
-      Stage 0: ~0.997  (C2: 192 channels)
-      Stage 1: ~0.997  (C3: 384 channels)
-      Stage 2: ~0.982  (C4: 768 channels)
-      Stage 3: ~0.993  (C5: 1536 channels)
-    """
     from models.experimental.swin_l.tt.tt_backbone import TtSwinLBackbone
     from models.experimental.swin_l.tt.model_preprocessing import (
         load_backbone_weights,
         compute_attn_masks,
     )
 
-    # --- PyTorch reference ---
     torch_input = torch.rand(1, 3, DEFAULT_INPUT_H, DEFAULT_INPUT_W)
     torch_feats = swin_l_ref.forward_backbone(torch_input)
     assert len(torch_feats) == 4
 
-    # --- TTNN model ---
     parameters = load_backbone_weights(
         swin_l_ckpt_path,
         device,

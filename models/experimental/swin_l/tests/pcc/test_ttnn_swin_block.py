@@ -1,11 +1,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-PCC test: TTNN Swin-L transformer block vs PyTorch reference.
-Tests full block (LN -> attention -> residual -> LN -> FFN -> residual).
-"""
-
 import pytest
 import torch
 import ttnn

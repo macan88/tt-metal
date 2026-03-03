@@ -1,18 +1,10 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-TTNN Patch Merging (downsampling) for Swin-L backbone.
-Adapted from models/experimental/swin_s/tt/tt_patchmerging.py.
-Initial version: generic (no hardcoded sharding configs).
-"""
-
 import ttnn
 
 
 class TtSwinPatchMerge:
-    """Patch merging: 2x2 spatial downsample -> concat -> LN -> linear (4C -> 2C)."""
-
     def __init__(self, device, parameters, dim):
         self.device = device
         self.parameters = parameters
