@@ -43,6 +43,19 @@ on:
         type: boolean
         default: false
         description: "Enable Tracy-based device perf for final-op-unit tests"
+      recreate_weights_cache:
+        description: 'Recreate weights cache in a new directory'
+        required: false
+        type: choice
+        default: "No"
+        options:
+          - "No"
+          - "Yes"
+      new_cache_dir:
+        description: 'New cache subdirectory name (under DeepSeek-R1-0528-Cache/). Required when recreating weights cache.'
+        required: false
+        type: string
+        default: ''
   schedule:
     - cron: "0 3 * * *" # Run at 3:00 AM UTC (11:00 PM EST) every day
 
@@ -69,3 +82,5 @@ jobs:
       topology: topology-6u
       test-type: ${{ inputs.test-type || 'all' }}
       enable-tracy: ${{ inputs.enable-tracy || false }}
+      recreate_weights_cache: ${{ inputs.recreate_weights_cache || 'No' }}
+      new_cache_dir: ${{ inputs.new_cache_dir || '' }}
