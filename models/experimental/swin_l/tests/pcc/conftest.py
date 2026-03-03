@@ -1,15 +1,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Shared fixtures for standalone Swin-L PCC tests.
-
-By default, uses the DINO-5scale Swin-L checkpoint (any mmdet checkpoint
-with a Swin-L backbone works). Override with environment variables:
-  SWIN_L_CONFIG  — path to mmdet config file
-  SWIN_L_CKPT    — path to mmdet checkpoint file
-"""
-
 import os
 from pathlib import Path
 
@@ -26,7 +17,6 @@ def _mmdet_importable():
 
 
 def _get_config_and_checkpoint():
-    """Resolve config and checkpoint paths, with env-var overrides."""
     base = Path(os.environ.get("TT_METAL_HOME", Path.cwd()))
 
     config = os.environ.get(
@@ -56,7 +46,6 @@ CKPT_SKIP = (
 
 @pytest.fixture(scope="module")
 def swin_l_ref():
-    """Module-scoped PyTorch Swin-L reference (loaded once, shared across tests)."""
     if not _mmdet_importable():
         pytest.skip(MMDET_SKIP)
     config_path, ckpt_path = _get_config_and_checkpoint()
@@ -69,7 +58,6 @@ def swin_l_ref():
 
 @pytest.fixture(scope="module")
 def swin_l_ckpt_path():
-    """Return checkpoint path string."""
     _, ckpt_path = _get_config_and_checkpoint()
     if not Path(ckpt_path).is_file():
         pytest.skip(CKPT_SKIP)

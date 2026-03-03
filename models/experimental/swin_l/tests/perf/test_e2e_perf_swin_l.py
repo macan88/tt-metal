@@ -1,17 +1,6 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-Swin-L Backbone end-to-end performance test (Pipeline API).
-
-Runs Swin-L backbone with:
-- Trace enabled
-- 2 command queues
-
-Usage:
-    pytest models/experimental/swin_l/tests/perf/test_e2e_perf_swin_l.py -v -m models_performance_bare_metal
-"""
-
 import os
 import time
 from pathlib import Path
@@ -69,7 +58,6 @@ def _create_swin_l_pipeline_model(ttnn_model, batch_size, input_h, padded_input_
                 memory_config=ttnn.DRAM_MEMORY_CONFIG,
             )
         features = ttnn_model(input_for_model)
-        # Keep one tensor as model output to minimize host readback cost in perf mode.
         last_feature = features[-1]
         for feature in features[:-1]:
             if feature.is_allocated():

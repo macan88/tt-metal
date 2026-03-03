@@ -1,19 +1,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-TTNN Swin Transformer block for Swin-L backbone.
-Adapted from models/experimental/swin_s/tt/tt_swin_transformer_block.py.
-"""
-
 import ttnn
 from models.experimental.swin_l.tt.tt_swin_attention import TtSwinAttention
 from models.experimental.swin_l.tt.tt_swin_mlp import TtSwinMLP
 
 
 class TtSwinBlock:
-    """Pre-norm Swin Transformer block: LN -> Attention -> residual -> LN -> MLP -> residual."""
-
     def __init__(self, device, parameters, dim, num_heads, window_size, shift_size, mlp_ratio=4.0, attn_mask=None):
         self.device = device
         self.parameters = parameters
