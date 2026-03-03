@@ -34,8 +34,8 @@ namespace CMAKE_UNIQUE_NAMESPACE {
  *          K=32 -> returns 32 (exactly 1 tile)
  *          K=33 -> returns 64 (2 tiles needed)
  */
-uint32_t get_nearest_supported_k_value(const uint32_t k) {
-    return tt::constants::TILE_WIDTH * tt::div_up(k, tt::constants::TILE_WIDTH);
+uint32_t get_nearest_supported_k_value(const uint32_t k, const uint32_t tile_width) {
+    return tile_width * tt::div_up(k, tile_width);
 }
 
 /**
@@ -216,9 +216,11 @@ std::vector<Tensor> topk(
         tt::tt_metal::num_cores_to_corerangeset(max_number_of_cores, compute_with_storage_grid_size, true);
     const auto used_sub_core_grids = sub_core_grids.value_or(full_core_grids);
 
-    // OP constraint: K must be tile-aligned (multiple of 32 elements)
+    // OP constraint: K must be tile-aligned (multiple of tile width)
     // Round up to nearest supported value for OP execution
-    const uint32_t adjusted_k = operations::reduction::topk::CMAKE_UNIQUE_NAMESPACE::get_nearest_supported_k_value(k);
+    const uint32_t tile_width = input_tensor.tensor_spec().tile().get_tile_shape()[1];
+    const uint32_t adjusted_k =
+        operations::reduction::topk::CMAKE_UNIQUE_NAMESPACE::get_nearest_supported_k_value(k, tile_width);
 
     // Dimension reordering - move target dimension to last position
     Tensor transposed_tensor = ::reduction_common::perform_transpose(input_tensor, is_dim_last_idx, dim, -1);

@@ -16,16 +16,17 @@
 namespace ttnn::prim {
 
 // calculate the offset between consecutive tiles between accumulation axis and last dimension
-uint32_t AccumulationProgramFactory::calc_input_tile_offset(const Shape& input_shape, const int32_t& dim) {
+uint32_t AccumulationProgramFactory::calc_input_tile_offset(
+    const Shape& input_shape, const int32_t& dim, uint32_t tile_height, uint32_t tile_width) {
     uint32_t input_tile_offset{1};
     for (int32_t i = dim + 1; i < input_shape.rank() - 2; ++i) {
         input_tile_offset *= input_shape[i];
     }
     if (input_shape.rank() > 1) {
-        input_tile_offset *= (input_shape[-2] / tt::constants::TILE_HEIGHT);
+        input_tile_offset *= (input_shape[-2] / tile_height);
     }
     if (input_shape.rank() > 0) {
-        input_tile_offset *= (input_shape[-1] / tt::constants::TILE_WIDTH);
+        input_tile_offset *= (input_shape[-1] / tile_width);
     }
 
     return input_tile_offset;
@@ -63,12 +64,15 @@ AccumulationProgramFactory::cached_program_t AccumulationProgramFactory::create(
         (operation_attributes.dim >= 0) ? operation_attributes.dim : (input_rank + operation_attributes.dim)};
 
     const auto& tile = input_tensor.tensor_spec().tile();
+    const auto tile_shape = tile.get_tile_shape();
+    const uint32_t tile_height = tile_shape[0];
+    const uint32_t tile_width = tile_shape[1];
     // how many tiles along accumulation axis
     const uint32_t tiles_per_row{input_tensor.padded_shape()[dim]};
     // all work units (product of all row lengths besides the accumulation row)
     const uint32_t num_rows_total{input_tensor.physical_volume() / tile.get_tile_hw() / tiles_per_row};
     // tiles between consecutive tiles along accumulation row
-    const uint32_t input_tile_offset{calc_input_tile_offset(input_shape, dim)};
+    const uint32_t input_tile_offset{calc_input_tile_offset(input_shape, dim, tile_height, tile_width)};
 
     const auto
         [num_cores, all_cores, core_group_1, core_group_2, num_cols_per_core_group_1, num_cols_per_core_group_2] =

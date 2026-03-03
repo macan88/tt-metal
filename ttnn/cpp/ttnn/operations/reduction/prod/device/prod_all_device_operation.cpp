@@ -32,8 +32,10 @@ void ProdAllDeviceOperation::validate_on_program_cache_miss(
 ProdAllDeviceOperation::spec_return_value_t ProdAllDeviceOperation::compute_output_specs(
     const operation_attributes_t& args, const tensor_args_t& tensor_args) {
     const auto& input = tensor_args.input;
+    const auto tile_shape = input.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_hw = tile_shape[0] * tile_shape[1];
     return TensorSpec(
-        ttnn::Shape({1, 1, 1, tt::constants::TILE_HW}),
+        ttnn::Shape({1, 1, 1, tile_hw}),
         tt::tt_metal::TensorLayout(
             input.dtype(), tt::tt_metal::PageConfig(tt::tt_metal::Layout::TILE), args.output_mem_config));
 }

@@ -13,13 +13,15 @@
 
 namespace ttnn::prim {
 
-using namespace tt::constants;
-
 ProdNcProgramFactory::cached_program_t ProdNcProgramFactory::create(
     const ProdNcParams& operation_attributes, const ProdNcInputs& tensor_args, Tensor& /*tensor_return_value*/) {
     const auto& input = tensor_args.input;
     const auto& output = tensor_args.output;
     const int64_t dim = operation_attributes.dim;
+    const auto tile_shape = input.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_height = tile_shape[0];
+    const uint32_t tile_width = tile_shape[1];
+    const uint32_t tile_hw = tile_height * tile_width;
 
     TT_FATAL(dim == 0 || dim == 1, "Dimension ({}) must be either 0 or 1", dim);
 
@@ -38,13 +40,13 @@ ProdNcProgramFactory::cached_program_t ProdNcProgramFactory::create(
 
     [[maybe_unused]] const auto N = input_shape[0];
     const auto C = input_shape[1];
-    const auto Ht = input_shape[2] / TILE_HEIGHT;
-    const auto Wt = input_shape[3] / TILE_WIDTH;
+    const auto Ht = input_shape[2] / tile_height;
+    const auto Wt = input_shape[3] / tile_width;
     const auto HtWt = Ht * Wt;
     const auto CHtWt = C * Ht * Wt;
     const auto num_reduce_input_tile = input_shape[dim];
     const auto input_tile_offset = (dim == 0) ? (CHtWt) : (HtWt);
-    const auto num_output_tiles = output.physical_volume() / TILE_HW;
+    const auto num_output_tiles = output.physical_volume() / tile_hw;
 
     log_debug(tt::LogTest, "N {} C {} Ht {} Wt {}", N, C, Ht, Wt);
     log_debug(

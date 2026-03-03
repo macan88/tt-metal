@@ -89,18 +89,21 @@ void ArgMaxDeviceOperation::validate_on_program_cache_miss(
 
         const auto& input_shape = input_tensor_a.padded_shape();
         auto rank = input_shape.size();
+        const auto tile_shape = input_tensor_a.tensor_spec().tile().get_tile_shape();
+        const uint32_t tile_width = tile_shape[1];
+        const uint32_t tile_height = tile_shape[0];
         // With TILE layout, padded shape has always at least 2 dims (i.e., also for 1D input tensors).
         TT_FATAL(rank > 1, "Invalid rank {} for input tensor with TILE layout", rank);
         TT_FATAL(
-            input_shape[rank - 1] % tt::constants::TILE_WIDTH == 0,
-            "Last dimension {} must be divisible by TILE_WIDTH {}",
+            input_shape[rank - 1] % tile_width == 0,
+            "Last dimension {} must be divisible by tile width {}",
             input_shape[rank - 1],
-            tt::constants::TILE_WIDTH);
+            tile_width);
         TT_FATAL(
-            input_shape[rank - 2] % tt::constants::TILE_HEIGHT == 0,
-            "Second-to-last dimension {} must be divisible by TILE_HEIGHT {}",
+            input_shape[rank - 2] % tile_height == 0,
+            "Second-to-last dimension {} must be divisible by tile height {}",
             input_shape[rank - 2],
-            tt::constants::TILE_HEIGHT);
+            tile_height);
     }
 
     TT_FATAL(args.output_dtype == DataType::UINT32, "Only UINT32 is supported for outputs, got {}", args.output_dtype);

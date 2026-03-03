@@ -39,7 +39,7 @@ uint32_t largest_power_of_two(uint32_t x) { return x == 0 ? 0 : (1U << (31 - __b
  *
  * Memory cost model:
  * - Gather cost: Data movement between cores (2 * num_cores * tile_sizes)
- * - Local cost: Per-core memory usage (split_size/TILE_WIDTH * tile_sizes)
+ * - Local cost: Per-core memory usage (split_size/tile_width * tile_sizes)
  * - Total must fit within L1 memory per core
  *
  * @param width Total width of the dimension being processed (in elements)
@@ -57,6 +57,7 @@ std::optional<TopKCoreConfig> find_topk_core_config(
     uint32_t min_dim,
     uint32_t max_dim,
     uint32_t k,
+    uint32_t tile_width,
     const tt::tt_metal::CoreRange& core_range,
     uint32_t l1_size,
     uint32_t value_tile_size,
@@ -71,8 +72,7 @@ std::optional<TopKCoreConfig> find_topk_core_config(
     // 3. Convert back to elements by multiplying by tile width
     // This ensures we start with a split size that can utilize most available cores
     const uint32_t start_split_size =
-        static_cast<uint32_t>(width / tt::constants::TILE_WIDTH / largest_power_of_two(max_cores)) *
-        tt::constants::TILE_WIDTH;
+        static_cast<uint32_t>(width / tile_width / largest_power_of_two(max_cores)) * tile_width;
     // Search for optimal split size by trying powers of 2 from conservative start to max_dim
     for (uint32_t split_size = start_split_size; split_size <= max_dim; split_size *= 2) {
         // Calculate work distribution for this split size
@@ -86,8 +86,7 @@ std::optional<TopKCoreConfig> find_topk_core_config(
 
         // Local cost: Memory each core needs for its portion of the work
         // Proportional to split_size converted to tiles
-        const uint32_t memory_cost_local =
-            (split_size / tt::constants::TILE_WIDTH) * (value_tile_size + index_tile_size);
+        const uint32_t memory_cost_local = (split_size / tile_width) * (value_tile_size + index_tile_size);
 
         // Extract core grid dimensions from the available range
         const uint32_t max_x = core_range.end_coord.x - core_range.start_coord.x;
@@ -131,10 +130,9 @@ std::optional<TopKCoreConfig> find_topk_core_config(
             config.rem = static_cast<uint16_t>(rem);
 
             // Calculate final input size after parallel processing:
-            // Each core produces top-K results, so final size is num_cores * max(K, TILE_WIDTH)
-            // TILE_WIDTH minimum ensures proper tile alignment
-            config.final_input_size =
-                static_cast<uint16_t>(num_cores * std::max(k, static_cast<uint32_t>(tt::constants::TILE_WIDTH)));
+            // Each core produces top-K results, so final size is num_cores * max(K, tile_width)
+            // tile_width minimum ensures proper tile alignment
+            config.final_input_size = static_cast<uint16_t>(num_cores * std::max(k, tile_width));
 
             config.selected_x = static_cast<uint16_t>(selected_x);
             config.selected_y = static_cast<uint16_t>(selected_y);
@@ -169,13 +167,14 @@ bool verify_multi_core_cost(
     uint32_t min_dim,
     uint32_t max_dim,
     uint32_t k,
+    uint32_t tile_width,
     const tt::tt_metal::CoreRange& core_range,
     uint32_t l1_size,
     uint32_t value_tile_size,
     uint32_t index_tile_size) {
     // Attempt to find a valid configuration
-    const auto config =
-        find_topk_core_config(width, min_dim, max_dim, k, core_range, l1_size, value_tile_size, index_tile_size);
+    const auto config = find_topk_core_config(
+        width, min_dim, max_dim, k, tile_width, core_range, l1_size, value_tile_size, index_tile_size);
     return config.has_value();
 }
 
@@ -205,8 +204,9 @@ bool verify_single_core_cost(const ttnn::Tensor& input_tensor, uint32_t k, bool 
     constexpr uint32_t num_cb_unit = 2;                // Base unit for buffer sizing
     constexpr uint32_t cb_in_units = 2 * num_cb_unit;  // Input buffer size multiplier
 
+    const uint32_t tile_width = input_tensor.tensor_spec().tile().get_tile_shape()[1];
     // Calculate number of tiles needed to store K elements
-    const uint32_t Ktiles = tt::div_up(k, tt::constants::TILE_WIDTH);
+    const uint32_t Ktiles = tt::div_up(k, tile_width);
 
     // Define circular buffer requirements for different stages:
     constexpr uint32_t input_cb_tile_count = cb_in_units;   // Input data streaming

@@ -7,7 +7,9 @@
 namespace ttnn::prim {
 tt::tt_metal::ReduceOpParallelizationStrategy get_parallelization_strategy(
     const tt::tt_metal::Tensor& input_tensor, tt::tt_metal::ReduceOpDim reduce_dim) {
-    uint32_t num_tiles = input_tensor.physical_volume() / tt::constants::TILE_HW;
+    const auto tile_shape = input_tensor.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_hw = tile_shape[0] * tile_shape[1];
+    uint32_t num_tiles = input_tensor.physical_volume() / tile_hw;
     if (reduce_dim == tt::tt_metal::ReduceOpDim::H) {
         return tt::tt_metal::ReduceOpParallelizationStrategy::MULTI_CORE_H;
     }

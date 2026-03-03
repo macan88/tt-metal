@@ -90,6 +90,7 @@ TopKDeviceOperation::program_factory_t TopKDeviceOperation::select_program_facto
         const uint32_t index_tile_size = tile_size(index_cb_data_format);
 
         const auto core_range = args.sub_core_grids.ranges().at(0);
+        const uint32_t tile_width = input_tensor.tensor_spec().tile().get_tile_shape()[1];
 
         // Perform comprehensive multi-core feasibility analysis
         // This checks: memory constraints, core availability, work divisibility,
@@ -99,6 +100,7 @@ TopKDeviceOperation::program_factory_t TopKDeviceOperation::select_program_facto
             ttnn::prim::constants::min_dim_per_core,  // Minimum split size
             input_shape[args.dim] / 2,                // Maximum split size
             args.k,                                   // Number of top elements
+            tile_width,                               // Tile width for alignment
             core_range,                               // Available core grid
             device->l1_size_per_core(),               // L1 memory per core
             value_tile_size,                          // Value tile memory size
@@ -196,6 +198,7 @@ void TopKDeviceOperation::validate_on_program_cache_miss(
             args.sub_core_grids.ranges().size());
 
         const auto core_range = args.sub_core_grids.ranges().at(0);
+        const uint32_t tile_width = input_tensor.tensor_spec().tile().get_tile_shape()[1];
 
         // Check if multi-core execution is feasible with current memory and core constraints
         can_run = verify_multi_core_cost(
@@ -203,6 +206,7 @@ void TopKDeviceOperation::validate_on_program_cache_miss(
             ttnn::prim::constants::min_dim_per_core,  // Min split size
             input_shape[args.dim] / 2,                // Max split size
             args.k,                                   // Top-K value
+            tile_width,                               // Tile width for alignment
             core_range,                               // Available cores
             device->allocator()->get_statistics(tt::tt_metal::BufferType::L1).largest_free_block_bytes,  // L1 memory
             value_tile_size,   // Value tile size

@@ -10,8 +10,6 @@
 #include <tt-metalium/tensor_accessor_args.hpp>
 #include <cmath>
 
-using namespace tt::constants;
-
 namespace ttnn::prim {
 
 ReduceMultiCoreWProgramFactory::cached_program_t ReduceMultiCoreWProgramFactory::create(
@@ -20,11 +18,14 @@ ReduceMultiCoreWProgramFactory::cached_program_t ReduceMultiCoreWProgramFactory:
     using namespace tt::tt_metal;
     const auto& a = tensor_args;
     auto& output = tensor_return_value;
+    const auto tile_shape = a.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_height = tile_shape[0];
+    const uint32_t tile_width = tile_shape[1];
     const auto& shape = a.padded_shape();
     uint32_t W = shape[3], H = shape[2], NC = shape[1] * shape[0];
 
-    uint32_t Wt = W / TILE_WIDTH;
-    uint32_t Ht = H / TILE_HEIGHT;
+    uint32_t Wt = W / tile_width;
+    uint32_t Ht = H / tile_height;
 
     auto [math_fidelity, math_approx_mode, fp32_dest_acc_en, packer_l1_acc, dst_full_sync_en] =
         get_compute_kernel_config_args(a.device()->arch(), operation_attributes.compute_kernel_config);
