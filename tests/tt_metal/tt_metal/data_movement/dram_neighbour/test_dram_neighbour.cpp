@@ -343,7 +343,7 @@ bool run_single_test(
 }
 
 bool run_sweep_test(
-    shared_ptr<distributed::MeshDevice> mesh_device,
+    const shared_ptr<distributed::MeshDevice>& mesh_device,
     uint32_t test_id,
     uint32_t max_transactions,
     uint32_t num_banks,
