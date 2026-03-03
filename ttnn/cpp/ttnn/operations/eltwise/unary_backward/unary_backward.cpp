@@ -1690,6 +1690,7 @@ Tensor change_layout_to_tile(const Tensor& temp, const MemoryConfig& /*output_me
     if (formatted_input_tensor.layout() == Layout::ROW_MAJOR) {
         auto a_pad_shape = ttnn::operations::data_movement::pad_to_tile_shape(temp.padded_shape());
         auto need_format = temp.layout() != Layout::TILE || temp.padded_shape() != a_pad_shape;
+        // Bug: need_format is always TRUE (temp.layout() != Layout::TILE is always true in the if block)
         if (need_format) {
             formatted_input_tensor =
                 ttnn::tilize_with_val_padding(temp, a_pad_shape, PadValue(1.0f), temp.memory_config());

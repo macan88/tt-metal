@@ -51,7 +51,14 @@ Tensor reduce_min(
     Tensor input = input_tensor;
     if (input.layout() == tt::tt_metal::Layout::ROW_MAJOR &&
         input.storage_type() == tt::tt_metal::StorageType::DEVICE) {
-        input = ttnn::operations::unary_backward::change_layout_to_tile(input, output_mem_config);
+        // BUG (1.0f padding will not work with [reduce min = - reduce_max( -x )])
+        // input = ttnn::operations::unary_backward::change_layout_to_tile(input, output_mem_config);
+
+        // BUG FIX (Padding 1.0f is causing min of set of values(>1) always 1.0f)
+        // Resolution: Using tilize_with_val_padding, with "inf" as the pad value.
+        auto a_pad_shape = ttnn::operations::data_movement::pad_to_tile_shape(input.padded_shape());
+        input = ttnn::tilize_with_val_padding(
+            input, a_pad_shape, std::numeric_limits<float>::infinity(), output_mem_config);
     }
     return detail::reduce(
         input,
