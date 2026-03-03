@@ -4,6 +4,7 @@
 from transformers import AutoTokenizer, AutoTokenizer
 from huggingface_hub import snapshot_download
 from ttml.common.model_factory import TransformerModelFactory
+from ttml.common.utils import set_seed
 import ttnn
 import ttml
 import os
@@ -13,7 +14,7 @@ import time
 from typing import List
 
 CONFIG = "training_gsm8k_rl_llama.yaml"
-HF_MODEL_ID = "TinyLlama/TinyLlama-1.1B-step-50K-105b"
+HF_MODEL_ID = "HuggingFaceTB/SmolLM2-135M"
 LOAD_PRETRAINED = True
 
 from ttml.common.config import (
@@ -159,17 +160,18 @@ def model_inference(
     completion_ids=None,  # required when mode="score"
     max_new_tokens: int = 64,  # used when mode="sample"
     temperature: float = 0.8,
-    max_t: int = 256,
-    num_layers: int = 22,
-    num_groups: int = 4,
-    embedding_dim: int = 2048,
-    num_heads: int = 32,
+    max_t: int = 200,
+    num_layers: int = 30,
+    num_groups: int = 3,
+    embedding_dim: int = 576,
+    num_heads: int = 9,
 ):
     assert mode in {"sample", "score"}
     if mode == "score":
         assert completion_ids is not None and len(completion_ids) > 0
 
     ids = list(prompt_ids)
+    print(f"model_inference, f{len(ids)=}, {max_t=}, {max_new_tokens=}")
     assert len(ids) < max_t, f"Prompt too long: {len(ids)} >= {max_t}"
 
     tt_model.eval()
@@ -215,6 +217,9 @@ def model_inference(
             generated.append(tgt)
     finally:
         _safe_deallocate(last_logits)
+
+    if mode == "sample" and len(generated) == 0:
+        return InferenceOutput(prompt_ids=ids, completion_ids=[], token_logprobs=[])
 
     # ---- Decode loop ----
     steps = (max_new_tokens - 1) if mode == "sample" else (len(completion_ids) - 1)
@@ -289,7 +294,7 @@ def reward_fn_from_completion_ids(completion_ids):
     return -float(len(completion_ids))
 
 
-def train_gsm8k(tt_model, optimizer, max_steps=1000, group_size=4, max_new_tokens=32):
+def train_gsm8k(tt_model, optimizer, max_steps=1000, group_size=2, max_new_tokens=8):
     print("Loading GSM8K dataset...")
     train_data = datasets.load_dataset("openai/gsm8k", "main", split="train")
     X, _ = tokenize_dataset(train_data, tokenizer)
@@ -306,7 +311,6 @@ def train_gsm8k(tt_model, optimizer, max_steps=1000, group_size=4, max_new_token
     )
 
     for step in range(min(max_steps, len(X))):
-        print(step)
         prompt_ids = X[step].tolist()
 
         # -------------------------
@@ -322,14 +326,9 @@ def train_gsm8k(tt_model, optimizer, max_steps=1000, group_size=4, max_new_token
                     tokenizer,
                     prompt_ids,
                     mode="sample",
+                    max_t=max_sequence_length,
                     max_new_tokens=max_new_tokens,
                     temperature=0.8,
-                    # pass dims matching your model
-                    max_t=max_sequence_length,
-                    num_layers=22,
-                    num_groups=4,
-                    embedding_dim=2048,
-                    num_heads=32,
                 )
                 sampled_completions.append(out.completion_ids)
                 rewards.append(reward_fn_from_completion_ids(out.completion_ids))
@@ -430,8 +429,7 @@ def train_gsm8k(tt_model, optimizer, max_steps=1000, group_size=4, max_new_token
 
         optimizer.step()
 
-        if step % 10 == 0:
-            print(f"step={step} reward_mean={rewards_np.mean():.4f}")
+        print(f"step={step} reward_mean={rewards_np.mean():.4f}")
 
     _safe_deallocate(causal_mask.get_value())
 
@@ -490,6 +488,7 @@ def create_model(model_config):
 
 
 if __name__ == "__main__":
+    set_seed(42)
     training_config = load_training_config()
     print(training_config)
 
