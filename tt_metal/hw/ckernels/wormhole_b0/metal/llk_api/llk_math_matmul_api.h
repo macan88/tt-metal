@@ -38,6 +38,7 @@ inline void llk_math_matmul(const uint dst_index, const std::uint32_t ct_dim = 1
         (ckernel::math::get_dest_max_matmul_tiles(dst_index, ct_dim, rt_dim) <
          get_dest_max_tiles<DST_SYNC_MODE, DST_ACCUM_MODE, DstTileShape::Tile32x32>()),
         "");
+    verify_math_owns_dest_reg<DST_SYNC_MODE>();
 
     _llk_math_matmul_<math_fidelity, THROTTLE_LEVEL>(dst_index, ct_dim, rt_dim);
 }

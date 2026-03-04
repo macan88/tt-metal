@@ -27,6 +27,7 @@ inline void llk_math_eltwise_binary_sub_bcast_cols_custom(const std::uint32_t ds
     LLK_ASSERT(
         (dst_index < get_dest_max_tiles<DST_SYNC_MODE, DST_ACCUM_MODE, DstTileShape::Tile32x32>()),
         "dst_index out of range");
+    verify_math_owns_dest_reg<DST_SYNC_MODE>();
 
     math::set_dst_write_addr<DstTileShape::Tile32x32, UnpackDestination::SrcRegs>(dst_index);
     _llk_math_eltwise_binary_bcast_reuse_custom_(ct_dim);

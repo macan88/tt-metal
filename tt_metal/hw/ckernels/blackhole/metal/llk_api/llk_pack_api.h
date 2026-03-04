@@ -158,6 +158,7 @@ inline void llk_pack(std::uint32_t tile_index, std::uint32_t output, std::uint32
         "");
 
     LLK_ASSERT((tile_index < get_dest_max_tiles<DST_SYNC_MODE, DST_ACCUM_MODE, DstTileShape::Tile32x32>()), "");
+    verify_pack_owns_dest_reg<DST_SYNC_MODE>();
     _llk_pack_<DST_SYNC_MODE, is_fp32_dest_acc_en, untilize>(tile_index, pack_tile_addr);
 }
 
@@ -215,6 +216,7 @@ inline void llk_pack_untilize(
             16;
 
     for (std::uint32_t block_rt = 0; block_rt < block_rt_dim; block_rt++) {
+        verify_pack_owns_dest_reg<DST_SYNC_MODE>();
         LLK_ASSERT(
             (are_packers_configured_correctly<PackerProgramType::ProgramByFace>(
                 pack_src_format[output_id], pack_dst_format[output_id], face_r_dim)),
@@ -266,6 +268,7 @@ inline void llk_pack_rows(
     LLK_ASSERT(
         (dst_index < get_dest_max_tiles<DST_SYNC_MODE, DST_ACCUM_MODE, DstTileShape::Tile32x32>()),
         "Dst tile exceeds maximum allowed for the given tile shape and accumulation mode.");
+    verify_pack_owns_dest_reg<DST_SYNC_MODE>();
 
     // Pack rows uses pack_reads_per_xy_plane=1 (set in _llk_pack_rows_init_) for row packing,
     // which differs from standard tile face_r_dim. Use ProgramByTile to skip face_r_dim check.
@@ -294,6 +297,7 @@ inline void llk_matmul_pack(
 
     for (uint32_t tile_index = start_tile_index; tile_index < start_tile_index + ntiles; tile_index++) {
         LLK_ASSERT((tile_index < get_dest_max_tiles<DST_SYNC_MODE, DST_ACCUM_MODE, DstTileShape::Tile32x32>()), "");
+        verify_pack_owns_dest_reg<DST_SYNC_MODE>();
 
         LLK_ASSERT(
             (are_packers_configured_correctly<PackerProgramType::ProgramByFace>(
@@ -311,7 +315,10 @@ inline void llk_matmul_pack(
  * LLK PACK COMMON
  *************************************************************************/
 
-inline void llk_packer_wait_for_math_done() { _llk_packer_wait_for_math_done_(); }
+inline void llk_packer_wait_for_math_done() {
+    _llk_packer_wait_for_math_done_();
+    verify_pack_owns_dest_reg<DST_SYNC_MODE>();
+}
 
 template <uint WaitRes = p_stall::NONE>
 inline void llk_packer_set_math_semaphore() {

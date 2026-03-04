@@ -36,6 +36,7 @@ inline void llk_math_reconfig_remap(const bool remap_enable) { _llk_math_reconfi
 inline void llk_math_wait_for_dest_available() {
     WAYPOINT("MWDW");
     _llk_math_wait_for_dest_available_<DST_SYNC_MODE>();
+    verify_math_owns_dest_reg<DST_SYNC_MODE>();
     WAYPOINT("MWDD");
 }
 

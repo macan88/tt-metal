@@ -151,6 +151,7 @@ inline std::uint32_t get_output_tile_address(std::uint8_t output_id, std::uint32
 template <bool is_fp32_dest_acc_en, bool out_of_order_output = false, bool untilize = false>
 inline void llk_pack(std::uint32_t tile_index, std::uint32_t output, std::uint32_t output_tile_index = 0) {
     LLK_ASSERT((tile_index < get_dest_max_tiles<DST_SYNC_MODE, DST_ACCUM_MODE, DstTileShape::Tile32x32>()), "");
+    verify_pack_owns_dest_reg<DST_SYNC_MODE>();
 
     std::uint8_t output_id = get_output_id(output);
 
@@ -216,6 +217,7 @@ inline void llk_pack_untilize(
             16;
 
     for (std::uint32_t block_rt = 0; block_rt < block_rt_dim; block_rt++) {
+        verify_pack_owns_dest_reg<DST_SYNC_MODE>();
         LLK_ASSERT(
             (are_packers_configured_correctly<PackerProgramType::ProgramByFace>(
                 pack_src_format[output_id], pack_dst_format[output_id], face_r_dim)),
@@ -237,6 +239,7 @@ inline void llk_matmul_pack(
 
     for (uint32_t tile_index = start_tile_index; tile_index < start_tile_index + ntiles; tile_index++) {
         LLK_ASSERT((tile_index < get_dest_max_tiles<DST_SYNC_MODE, DST_ACCUM_MODE, DstTileShape::Tile32x32>()), "");
+        verify_pack_owns_dest_reg<DST_SYNC_MODE>();
 
         std::uint32_t pack_tile_addr =
             get_output_tile_address<out_of_order_output, untilize>(output_id, output_tile_index);
@@ -281,6 +284,7 @@ inline void llk_pack_rows_init(const std::uint32_t num_rows) { _llk_pack_rows_in
 inline void llk_pack_rows(
     const std::uint32_t dst_index, const std::uint32_t output, const std::uint32_t output_index = 0) {
     LLK_ASSERT((dst_index < get_dest_max_tiles<DST_SYNC_MODE, DST_ACCUM_MODE, DstTileShape::Tile32x32>()), "");
+    verify_pack_owns_dest_reg<DST_SYNC_MODE>();
 
     const std::uint8_t output_id = get_output_id(output);
     const std::uint32_t pack_addr = get_output_tile_address<true, false>(output_id, output_index);
@@ -343,6 +347,7 @@ inline void llk_pack_fast_tilize_block(
     const std::uint32_t unit_dim,
     const std::uint32_t num_units) {
     LLK_ASSERT((tile_index < get_dest_max_tiles<DST_SYNC_MODE, DST_ACCUM_MODE, DstTileShape::Tile32x32>()), "");
+    verify_pack_owns_dest_reg<DST_SYNC_MODE>();
 
     const std::uint8_t output_id = get_output_id(output);
     const std::uint32_t num_faces = get_output_num_faces(output_id);
@@ -361,7 +366,10 @@ inline void llk_pack_fast_tilize_block(
  * LLK PACK COMMON
  *************************************************************************/
 
-inline void llk_packer_wait_for_math_done() { _llk_packer_wait_for_math_done_(); }
+inline void llk_packer_wait_for_math_done() {
+    _llk_packer_wait_for_math_done_();
+    verify_pack_owns_dest_reg<DST_SYNC_MODE>();
+}
 
 template <uint WaitRes = p_stall::NONE>
 inline void llk_packer_set_math_semaphore() {
