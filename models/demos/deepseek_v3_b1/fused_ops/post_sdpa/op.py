@@ -37,7 +37,6 @@ CB Layout:
 - CB 13: ccl_packet_header (sender + receiver cores)
 """
 
-import torch
 
 import ttnn
 from models.demos.deepseek_v3_b1.blitz_decode_weights import (
@@ -82,34 +81,25 @@ class PostSDPA:
     """
 
     @staticmethod
-    def golden(input_tensors, weights1_tensor, weights2_tensor, residual_tensor=None):
+    def golden(input_tensor, weights1_tensor, weights2_tensor, residual_tensor=None):
         """
-        PyTorch reference implementation for validation.
+        PyTorch reference implementation for a single device.
 
         Args:
-            input_tensors: List of input tensors (torch.Tensor) [1, 512], one per device
-            weights1_tensor: First weights tensor (torch.Tensor) [512, 8192]
-            weights2_tensor: Second weights tensor (torch.Tensor) [8192, 7168]
-            residual_tensor: Optional residual tensor to add after reduction [1, 7168]
+            input_tensor: Input tensor (torch.Tensor) [1, K1]
+            weights1_tensor: First weights tensor (torch.Tensor) [K1, intermediate]
+            weights2_tensor: Second weights tensor (torch.Tensor) [intermediate, output_size]
+            residual_tensor: Optional residual tensor to add [1, output_size]
 
         Returns:
-            Output tensor [1, 7168] - result of all-reduce across devices
+            Output tensor [1, output_size]
         """
-        # Compute matmul chain for each device
-        device_results = []
-        for input_tensor in input_tensors:
-            intermediate = input_tensor @ weights1_tensor  # [1, 8192]
-            result = intermediate @ weights2_tensor  # [1, 7168]
-            device_results.append(result)
+        result = input_tensor @ weights1_tensor @ weights2_tensor
 
-        # All-reduce: sum across all devices
-        reduced = torch.sum(torch.stack(device_results), dim=0)
-
-        # Add residual if provided
         if residual_tensor is not None:
-            reduced = reduced + residual_tensor
+            result = result + residual_tensor
 
-        return reduced
+        return result
 
     @staticmethod
     def get_program_context(
