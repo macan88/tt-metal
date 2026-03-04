@@ -129,7 +129,7 @@ jobs:
           LSAN_OPTIONS: suppressions=/usr/share/tt-metalium/lsan.supp
           TT_METAL_WATCHER_TEST_MODE: 1
         run: |
-          /usr/bin/${{ inputs.product }}-validation-smoke
+          /usr/bin/${{ inputs.product }}-validation-smoke --gtest_filter=-*NIGHTLY_*
 
       - name: Merge LLVM coverage
         if: ${{ inputs.upload-coverage }}

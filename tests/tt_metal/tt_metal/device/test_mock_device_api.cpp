@@ -114,7 +114,7 @@ TEST_F(MockDeviceAPIFixture, SwitchFromMockToRealHardware) {
     EXPECT_EQ(*desc, "wormhole_N300.yaml");
 }
 
-TEST_F(MockDeviceAPIFixture, SwitchFromMockToRealHardwareWithDeviceCreation) {
+TEST_F(MockDeviceAPIFixture, NIGHTLY_SwitchFromMockToRealHardwareWithDeviceCreation) {
     // Comprehensive test: verify disable_mock_mode() properly reinitializes MetalContext
     // and cleans up device-specific data structures when switching from mock to real hardware
     experimental::configure_mock_mode(tt::ARCH::BLACKHOLE, 1);
@@ -144,7 +144,7 @@ TEST_F(MockDeviceAPIFixture, SwitchFromMockToRealHardwareWithDeviceCreation) {
     }
 }
 
-TEST_F(MockDeviceAPIFixture, SwitchFromRealToMockHardware) {
+TEST_F(MockDeviceAPIFixture, NIGHTLY_SwitchFromRealToMockHardware) {
     // Skip if no real hardware available
     tt::ARCH detected_arch = get_physical_architecture();
     if (detected_arch == tt::ARCH::Invalid) {
