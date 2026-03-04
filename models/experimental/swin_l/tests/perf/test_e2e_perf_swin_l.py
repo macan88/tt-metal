@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
+"""End-to-end performance tests for Swin-L backbone on TT device (trace + 2CQ)."""
+
 import os
 import time
 from pathlib import Path
@@ -26,59 +28,60 @@ from models.tt_cnn.tt.pipeline import (
     get_memory_config_for_persistent_dram_tensor,
 )
 
+_CHECKPOINT_CANDIDATES = [
+    "dino_5scale_swin_l.pth",
+    "dino-5scale_swin-l_8xb2-36e_coco-5486e051.pth",
+]
+
 
 def _get_swin_l_checkpoint_path():
+    """Returns the path to an existing Swin-L checkpoint file, or empty string if none found."""
     base = Path(os.environ.get("TT_METAL_HOME", Path.cwd()))
     ckpt_dir = base / "models/experimental/dino_5scale_swin_l/checkpoints/dino_5scale_swin_l"
-
-    candidates = [
-        ckpt_dir / "dino_5scale_swin_l.pth",
-        ckpt_dir / "dino-5scale_swin-l_8xb2-36e_coco-5486e051.pth",
-    ]
-    for candidate in candidates:
-        if candidate.is_file():
-            return str(candidate)
+    for name in _CHECKPOINT_CANDIDATES:
+        path = ckpt_dir / name
+        if path.is_file():
+            return str(path)
     return ""
 
 
 def _create_swin_l_pipeline_model(ttnn_model, batch_size, input_h, padded_input_w, actual_input_w):
+    """Returns a pipeline run function that preprocesses L1 input, runs the backbone, and returns the last feature map."""
+
     def run(l1_input_tensor):
-        assert l1_input_tensor.storage_type() == ttnn.StorageType.DEVICE, "Model expects input tensor on device"
-        reshaped_input = ttnn.reshape(l1_input_tensor, (batch_size, 3, input_h, padded_input_w))
-        input_for_model = ttnn.to_memory_config(reshaped_input, ttnn.DRAM_MEMORY_CONFIG)
-        if reshaped_input.is_allocated():
-            ttnn.deallocate(reshaped_input)
-        if l1_input_tensor.is_allocated():
-            ttnn.deallocate(l1_input_tensor)
+        assert l1_input_tensor.storage_type() == ttnn.StorageType.DEVICE
+        reshaped = ttnn.reshape(l1_input_tensor, (batch_size, 3, input_h, padded_input_w))
+        model_input = ttnn.to_memory_config(reshaped, ttnn.DRAM_MEMORY_CONFIG)
+        for t in (reshaped, l1_input_tensor):
+            if t.is_allocated():
+                ttnn.deallocate(t)
+
         if padded_input_w != actual_input_w:
-            input_for_model = ttnn.slice(
-                input_for_model,
+            model_input = ttnn.slice(
+                model_input,
                 [0, 0, 0, 0],
                 [batch_size, 3, input_h, actual_input_w],
                 memory_config=ttnn.DRAM_MEMORY_CONFIG,
             )
-        features = ttnn_model(input_for_model)
-        last_feature = features[-1]
-        for feature in features[:-1]:
-            if feature.is_allocated():
-                ttnn.deallocate(feature)
-        return last_feature
+        features = ttnn_model(model_input)
+        last = features[-1]
+        for f in features[:-1]:
+            if f.is_allocated():
+                ttnn.deallocate(f)
+        return last
 
     return run
 
 
 def _get_l1_input_memory_config(host_input):
-    height_dim = host_input.shape[-2]
-    width_dim = host_input.shape[-1]
-    input_l1_core_grid = ttnn.CoreGrid(x=8, y=1)
-    num_cores = input_l1_core_grid.num_cores
-    if height_dim % num_cores != 0:
-        input_l1_core_grid = ttnn.CoreGrid(x=4, y=1)
-        num_cores = input_l1_core_grid.num_cores
-
+    """Builds height-sharded L1 memory config for pipeline input based on tensor shape and core grid."""
+    height, width = host_input.shape[-2], host_input.shape[-1]
+    core_grid = ttnn.CoreGrid(x=8, y=1)
+    if height % core_grid.num_cores != 0:
+        core_grid = ttnn.CoreGrid(x=4, y=1)
     return ttnn.create_sharded_memory_config(
-        shape=(height_dim // num_cores, width_dim),
-        core_grid=input_l1_core_grid,
+        shape=(height // core_grid.num_cores, width),
+        core_grid=core_grid,
         strategy=ttnn.ShardStrategy.HEIGHT,
         orientation=ttnn.ShardOrientation.ROW_MAJOR,
         use_height_and_width_as_shard_shape=True,
@@ -90,32 +93,22 @@ def _get_l1_input_memory_config(host_input):
 @pytest.mark.models_performance_bare_metal
 @pytest.mark.parametrize(
     "device_params",
-    [
-        {
-            "l1_small_size": 32768,
-            "trace_region_size": 10000000,
-            "num_command_queues": 2,
-        }
-    ],
+    [{"l1_small_size": 32768, "trace_region_size": 10000000, "num_command_queues": 2}],
     indirect=True,
 )
 @pytest.mark.parametrize("num_iterations", [8])
-@pytest.mark.parametrize("batch_size, expected_compile_time, expected_throughput_fps", [(1, 300.0, 1.0)])
+@pytest.mark.parametrize("batch_size, expected_compile_time, expected_throughput_fps", [(1, 7.4, 1.9)])
 def test_swin_l_backbone_e2e_perf_trace_2cq(
-    device,
-    num_iterations,
-    batch_size,
-    expected_compile_time,
-    expected_throughput_fps,
+    device, num_iterations, batch_size, expected_compile_time, expected_throughput_fps
 ):
-    input_h = 800
-    actual_input_w = 1333
+    """Measures compile time and inference throughput for Swin-L backbone with trace and 2 command queues."""
+    input_h, actual_input_w = 800, 1333
     padded_input_w = ((actual_input_w + 31) // 32) * 32
 
     ckpt_path = _get_swin_l_checkpoint_path()
     if not ckpt_path:
         pytest.skip(
-            "Checkpoint not found. Set SWIN_L_CKPT or download DINO-5scale Swin-L checkpoint under "
+            "Checkpoint not found. Download DINO-5scale Swin-L checkpoint under "
             "models/experimental/dino_5scale_swin_l/checkpoints/dino_5scale_swin_l"
         )
 
@@ -146,39 +139,36 @@ def test_swin_l_backbone_e2e_perf_trace_2cq(
         device=None,
     )
     host_input = ttnn.reshape(host_input_nchw, (1, 1, batch_size * 3 * input_h, padded_input_w))
-    dram_input_memory_config = get_memory_config_for_persistent_dram_tensor(
+    dram_config = get_memory_config_for_persistent_dram_tensor(
         host_input.shape, ttnn.TensorMemoryLayout.HEIGHT_SHARDED, device.dram_grid_size()
     )
-    l1_input_memory_config = _get_l1_input_memory_config(host_input)
+    l1_config = _get_l1_input_memory_config(host_input)
 
     pipeline = create_pipeline_from_config(
         config=PipelineConfig(use_trace=True, num_command_queues=2, all_transfers_on_separate_command_queue=False),
         model=_create_swin_l_pipeline_model(ttnn_model, batch_size, input_h, padded_input_w, actual_input_w),
         device=device,
-        dram_input_memory_config=dram_input_memory_config,
-        l1_input_memory_config=l1_input_memory_config,
+        dram_input_memory_config=dram_config,
+        l1_input_memory_config=l1_config,
     )
 
     logger.info("Compiling Swin-L e2e perf pipeline (trace + 2CQ)...")
-    start = time.time()
+    start = time.perf_counter()
     pipeline.compile(host_input)
-    end = time.time()
-    compile_and_first_run_time = end - start
+    compile_and_first_run_time = time.perf_counter() - start
 
     pipeline.preallocate_output_tensors_on_host(num_iterations)
+    inputs = [host_input] * num_iterations
 
     logger.info(f"Running Swin-L e2e perf for {num_iterations} iterations...")
-    inputs = [host_input] * num_iterations
-    start = time.time()
+    start = time.perf_counter()
     _ = pipeline.enqueue(inputs).pop_all()
-    end = time.time()
-    inference_time = (end - start) / num_iterations
+    inference_time = (time.perf_counter() - start) / num_iterations
 
     pipeline.cleanup()
 
     fps = batch_size / inference_time
-    logger.info(f"Swin-L average inference time: {inference_time:.4f} s")
-    logger.info(f"Swin-L throughput: {fps:.2f} FPS")
+    logger.info(f"Swin-L average inference time: {inference_time:.4f} s, throughput: {fps:.2f} FPS")
 
     prep_perf_report(
         model_name="ttnn_swin_l_backbone_trace_2cq",
