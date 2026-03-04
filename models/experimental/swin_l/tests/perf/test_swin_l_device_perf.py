@@ -4,7 +4,7 @@
 """
 Swin-L Backbone Device Performance Test.
 
-Measures raw device kernel execution time using the device profiler.
+Measures device kernel execution time using the device profiler.
 Runs the backbone PCC test with profiler enabled and reports device FPS.
 
 Usage:
@@ -25,7 +25,7 @@ def test_perf_device_bare_metal_swin_l(batch_size, expected_perf):
     num_iterations = 1
     margin = 0.03
 
-    command = "pytest --timeout=900 models/experimental/swin_l/tests/pcc/test_ttnn_backbone.py::test_ttnn_swin_l_backbone_e2e -sv"
+    command = "pytest --timeout=600 models/experimental/swin_l/tests/pcc/test_ttnn_backbone.py::test_ttnn_swin_l_backbone_e2e -sv"
     cols = ["DEVICE FW", "DEVICE KERNEL", "DEVICE BRISC KERNEL"]
     inference_time_key = "AVG DEVICE KERNEL SAMPLES/S"
 
