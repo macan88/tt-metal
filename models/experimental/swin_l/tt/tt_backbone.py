@@ -1,6 +1,27 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
+"""
+TTNN Swin-L backbone — standalone, reusable.
+Multi-scale output: returns feature maps for selected stages after per-stage norms.
+
+Architecture (Swin-L defaults):
+  PatchEmbed(4x4 conv, stride 4) -> 4 stages:
+    Stage 0: 2 blocks, dim=192,  heads=6,  window=12 -> C2
+    Stage 1: 2 blocks, dim=384,  heads=12, window=12 -> C3
+    Stage 2: 18 blocks, dim=768, heads=24, window=12 -> C4
+    Stage 3: 2 blocks, dim=1536, heads=48, window=12 -> C5
+  Downsample (PatchMerge) between stages 0->1, 1->2, 2->3.
+  Per-stage output norms applied before returning feature maps.
+
+Use `out_indices` to control which stages produce outputs:
+  DINO-5scale: out_indices=(0, 1, 2, 3) -> 4 feature maps
+  ATSS-DyHead: out_indices=(1, 2, 3)    -> 3 feature maps
+
+Input: [B, 3, H, W] in NCHW (converted to NHWC internally).
+Output: list of len(out_indices) tensors in NHWC [B, H, W, C].
+"""
+
 import ttnn
 from models.experimental.swin_l.tt.tt_swin_block import TtSwinBlock
 from models.experimental.swin_l.tt.tt_swin_patch_merge import TtSwinPatchMerge
@@ -8,6 +29,8 @@ from tests.ttnn.ttnn_utility_fuction import get_shard_grid_from_num_cores
 
 
 class TtSwinLBackbone:
+    """TTNN Swin-L backbone producing multi-scale feature maps for selected stages."""
+
     def __init__(
         self,
         device,
@@ -29,12 +52,13 @@ class TtSwinLBackbone:
         self.mlp_ratio = mlp_ratio
         self.out_indices = out_indices
 
+        # Patch embedding conv (4x4 stride 4)
         self.patch_embed_weight = parameters["patch_embed"]["projection"]["weight"]
         self.patch_embed_bias = parameters["patch_embed"]["projection"]["bias"]
         self.patch_embed_weight = ttnn.from_device(self.patch_embed_weight)
         self.patch_embed_bias = ttnn.from_device(self.patch_embed_bias)
 
-        # Build stages:
+        # Build stages: each stage = list of TtSwinBlock
         self.stages = []
         for s in range(4):
             dim = embed_dim * (2**s)
@@ -57,14 +81,21 @@ class TtSwinLBackbone:
                 )
             self.stages.append(blocks)
 
+        # Downsamples between stages 0->1, 1->2, 2->3
         self.downsamples = []
         for s in range(3):
             dim = embed_dim * (2**s)
             self.downsamples.append(TtSwinPatchMerge(device, parameters["stages"][s]["downsample"], dim=dim))
 
     def __call__(self, input_tensor):
+        """
+        input_tensor: [B, 3, H, W] NCHW on device.
+        Returns: list of len(out_indices) NCHW feature maps.
+        """
         N, C, H, W = input_tensor.shape
         patch_size = 4
+
+        # Pad input to multiple of patch_size
         pad_h = (patch_size - H % patch_size) % patch_size
         pad_w = (patch_size - W % patch_size) % patch_size
         min_channels = 16
@@ -78,7 +109,7 @@ class TtSwinLBackbone:
         if nchw is not input_tensor:
             ttnn.deallocate(nchw)
 
-        # Patch embedding:
+        # Patch embedding: 4x4 conv stride 4
         conv_config = ttnn.Conv2dConfig(
             weights_dtype=ttnn.bfloat16,
             shard_layout=ttnn.TensorMemoryLayout.HEIGHT_SHARDED,
@@ -129,11 +160,14 @@ class TtSwinLBackbone:
             memory_config=ttnn.DRAM_MEMORY_CONFIG,
         )
 
+        # Run 4 stages, collecting features only for stages in out_indices
         features = []
         for s in range(4):
+            # Run all blocks in this stage
             for block in self.stages[s]:
                 output = block(output)
 
+            # Only collect output for stages in out_indices
             if s in self.out_indices:
                 normed = ttnn.layer_norm(
                     output,
@@ -143,6 +177,7 @@ class TtSwinLBackbone:
                 )
                 features.append(normed)
 
+            # Downsample (except after last stage)
             if s < 3:
                 output = self.downsamples[s](output)
 

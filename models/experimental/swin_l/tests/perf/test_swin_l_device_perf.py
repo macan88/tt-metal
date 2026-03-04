@@ -1,6 +1,16 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
+"""
+Swin-L Backbone Device Performance Test.
+
+Measures raw device kernel execution time using the device profiler.
+Runs the backbone PCC test with profiler enabled and reports device FPS.
+
+Usage:
+    pytest models/experimental/swin_l/tests/perf/test_swin_l_device_perf.py -v -m models_device_performance_bare_metal
+"""
+
 import pytest
 
 from models.perf.device_perf_utils import check_device_perf, prep_device_perf_report, run_device_perf
