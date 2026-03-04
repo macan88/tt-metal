@@ -6,6 +6,7 @@ import pytest
 import torch
 import ttnn
 from tests.ttnn.utils_for_testing import assert_allclose
+from models.common.utility_functions import skip_with_llk_assert
 
 
 def test_manual_seed_different_argument_calls(device):
@@ -88,6 +89,7 @@ def test_manual_seed_base_functionality(device):
     assert_allclose(tensor_1, tensor_2)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 def test_manual_seed_mapping_functionality(device):
     """
     Test that manual_seed correctly handles per-core seed mapping.

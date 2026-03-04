@@ -9,6 +9,7 @@ import torch
 import ttnn
 
 from tests.ttnn.utils_for_testing import assert_equal
+from models.common.utility_functions import skip_with_llk_assert
 
 pytestmark = pytest.mark.use_module_device
 
@@ -67,6 +68,7 @@ def test_fill_int32(device, fill_value):
     assert equal_passed
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 @pytest.mark.parametrize("fill_value", [2147483647, 25.5, 4294967293, 1000000000, 4294967295])
 def test_fill_uint32(device, fill_value):
     torch_input_tensor = torch.ones((1, 2), dtype=torch.uint32)

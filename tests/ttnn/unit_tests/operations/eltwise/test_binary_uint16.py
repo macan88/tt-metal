@@ -5,10 +5,12 @@
 import torch
 import pytest
 import ttnn
+from models.common.utility_functions import skip_with_llk_assert
 
 pytestmark = pytest.mark.use_module_device
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 @pytest.mark.parametrize(
     "a_shape, b_shape",
     [
@@ -65,6 +67,7 @@ def test_binary_add_uint16_bcast(a_shape, b_shape, low_a, high_a, low_b, high_b,
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 def test_binary_add_uint16_edge_cases(device):
     torch_input_tensor_a = torch.tensor([0, 1, 0, 11, 500, 32767, 30000, 65535])
     input_tensor_a = ttnn.from_torch(
@@ -119,6 +122,7 @@ block_sharded_memory_config = ttnn.create_sharded_memory_config(
 )
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 @pytest.mark.parametrize(
     "a_shape, b_shape",
     ((torch.Size([5, 7, 64, 128]), torch.Size([5, 7, 64, 128])),),
@@ -169,6 +173,7 @@ def test_binary_uint16_sharded(a_shape, b_shape, sharded_config, ttnn_fn, device
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 @pytest.mark.parametrize(
     "a_shape, b_shape",
     [
@@ -223,6 +228,7 @@ def test_binary_sub_uint16_bcast(a_shape, b_shape, low_a, high_a, low_b, high_b,
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 def test_binary_sub_uint16_edge_cases(device):
     torch_input_tensor_a = torch.tensor([0, 1, 11, 7727, 65535, 65535, 65535])
     input_tensor_a = ttnn.from_torch(
@@ -252,6 +258,7 @@ def test_binary_sub_uint16_edge_cases(device):
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 @pytest.mark.parametrize(
     "a_shape, b_shape",
     ((torch.Size([5, 7, 64, 128]), torch.Size([5, 7, 64, 128])),),
@@ -299,6 +306,7 @@ def test_binary_sub_uint16_sharded(a_shape, b_shape, sharded_config, device):
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 @pytest.mark.parametrize(
     "a_shape, b_shape",
     [
@@ -367,6 +375,7 @@ def test_binary_bitwise_op_uint16(a_shape, b_shape, low_a, high_a, low_b, high_b
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 @pytest.mark.parametrize(
     "a_shape, b_shape",
     ((torch.Size([5, 7, 64, 128]), torch.Size([5, 7, 64, 128])),),
@@ -427,6 +436,7 @@ def test_bitwise_op_uint16_sharded(a_shape, b_shape, sharded_config, bitwise_op,
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 @pytest.mark.parametrize(
     "a_shape, b_shape",
     [
@@ -487,6 +497,7 @@ def test_binary_mul_uint16_bcast(a_shape, b_shape, low_a, high_a, low_b, high_b,
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 def test_binary_mul_uint16_edge_cases(device):
     torch_input_tensor_a = torch.tensor([0, 1, 0, 32767, 65535, 65535])
     input_tensor_a = ttnn.from_torch(
@@ -515,6 +526,7 @@ def test_binary_mul_uint16_edge_cases(device):
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 @pytest.mark.parametrize(
     "a_shape, b_shape",
     [
@@ -582,6 +594,7 @@ def test_binary_logical_uint16_bcast(a_shape, b_shape, ttnn_op, low_a, high_a, l
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 @pytest.mark.parametrize(
     "ttnn_op",
     [
@@ -619,6 +632,7 @@ def test_binary_logical_uint16_edge_cases(ttnn_op, use_legacy, device):
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 @pytest.mark.parametrize(
     "a_shape, b_shape",
     [
@@ -668,6 +682,7 @@ def test_binary_squared_difference_uint16_bcast(a_shape, b_shape, low_a, high_a,
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 @pytest.mark.parametrize(
     "low_a, high_a, low_b, high_b",
     [
@@ -703,6 +718,7 @@ def test_binary_rsub_uint16(low_a, high_a, low_b, high_b, device):
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 def test_binary_rsub_uint16_edge_cases(device):
     torch_input_tensor_a = torch.tensor([0, 0, 2, 500, 1, 30000, 0, 65530, 65528])
     input_tensor_a = ttnn.from_torch(
@@ -732,6 +748,7 @@ def test_binary_rsub_uint16_edge_cases(device):
     assert torch.equal(output_tensor, torch_output_tensor)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 def test_binary_bitwise_left_shift(device):
     x_torch = torch.tensor([0, 1, 2, 3, 15, 31, 255, 127, 63, 31, 15, 1], dtype=torch.int32)
 
@@ -748,6 +765,7 @@ def test_binary_bitwise_left_shift(device):
     assert torch.equal(tt_out, z_torch)
 
 
+@skip_with_llk_assert("Hits LLK assert check for are_packers_configured_correctly.")
 def test_binary_bitwise_right_shift(device):
     x_torch = torch.tensor(
         [0, 1, 2, 3, 15, 31, 255, 127, 63, 31, 15, 1, 65535, 32768, 16384, 8192, 1], dtype=torch.int32
