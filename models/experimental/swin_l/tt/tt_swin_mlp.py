@@ -1,10 +1,18 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
+"""
+TTNN MLP for Swin-L blocks.
+Adapted from models/experimental/swin_s/tt/tt_mlp.py.
+Initial version: generic (no hardcoded sharding configs).
+"""
+
 import ttnn
 
 
 class TtSwinMLP:
+    """Two-layer MLP with GELU activation."""
+
     def __init__(self, device, parameters, dim, mlp_ratio=4.0):
         self.device = device
         self.parameters = parameters

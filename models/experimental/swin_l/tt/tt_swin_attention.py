@@ -1,10 +1,17 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
+"""
+TTNN Shifted Window Attention for Swin-L backbone.
+Adapted from models/experimental/swin_s/tt/tt_shifted_window_attention.py.
+Initial version: correctness-first (no hardcoded sharding configs).
+"""
+
 import ttnn
 
 
 def roll(tensor, shifts, dims):
+    """Cyclic shift via slice + concat (same as Swin-S)."""
     if isinstance(shifts, int):
         shifts = (shifts,)
     if isinstance(dims, int):
@@ -35,6 +42,8 @@ def roll(tensor, shifts, dims):
 
 
 class TtSwinAttention:
+    """Shifted window multi-head self-attention (TTNN)."""
+
     def __init__(self, device, parameters, dim, window_size, shift_size, num_heads, attn_mask=None):
         self.device = device
         self.parameters = parameters
@@ -118,8 +127,10 @@ class TtSwinAttention:
         ttnn.deallocate(q)
         ttnn.deallocate(k)
 
+        # relative position bias
         attn = ttnn.add(attn, relative_position_bias, memory_config=ttnn.DRAM_MEMORY_CONFIG)
 
+        # attention mask for shifted windows
         if sum(shift_size) > 0 and self.attn_mask is not None:
             attn = ttnn.reshape(
                 attn + self.attn_mask,
