@@ -358,6 +358,7 @@ std::mutex g_instance_mutex;
 bool registered_handlers = false;
 
 MetalContext& MetalContext::instance(ContextId context_id) {
+    TT_FATAL(context_id >= 0, "context_id {} is invalid.", context_id);
     TT_FATAL(context_id < MAX_CONTEXT_COUNT, "context_id {} is out of range (max {}).", context_id, MAX_CONTEXT_COUNT);
 
     MetalContext* instance = g_instances[context_id].load(std::memory_order_acquire);

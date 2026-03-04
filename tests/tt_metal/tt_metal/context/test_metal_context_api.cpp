@@ -29,6 +29,11 @@ TEST_F(MetalContextTest, CreateSiliconInstance) {
     EXPECT_EQ(context_id, SILICON_CONTEXT_ID);
 }
 
+TEST_F(MetalContextTest, AccessInvalidContextId) {
+    EXPECT_THROW(MetalContext::instance(-1), std::runtime_error);
+    EXPECT_THROW(MetalContext::instance(MAX_CONTEXT_COUNT), std::runtime_error);
+}
+
 TEST_F(MetalContextTest, MultipleSiliconInstancesSameEnv) {
     auto env = std::make_shared<MetaliumEnv>();
     ContextId context_id = MetalContext::create_instance(env);
