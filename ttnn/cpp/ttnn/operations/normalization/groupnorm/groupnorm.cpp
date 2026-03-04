@@ -29,7 +29,8 @@ ttnn::Tensor get_mask_tensor(
             // Tries to find the largest number of virtual columns that will evenly divide the number of channels into
             // tiles.
             int num_virtual_cols = std::min(static_cast<int>(core_grid.value().x), num_groups);
-            while ((num_virtual_cols > 0) && (num_channel / num_virtual_cols) % ttnn::types::TILE_SIZE != 0) {
+            const int64_t tile_width = input_tensor.tensor_spec().tile().get_tile_shape()[1];
+            while ((num_virtual_cols > 0) && (num_channel / num_virtual_cols) % tile_width != 0) {
                 num_virtual_cols -= 1;
             }
             if (num_virtual_cols == 0) {
@@ -37,7 +38,11 @@ ttnn::Tensor get_mask_tensor(
             }
             num_cores_across_channel = num_virtual_cols;
         }
-        mask = create_group_norm_input_mask(num_channel, num_groups, num_cores_across_channel);
+        const auto tile_shape = input_tensor.tensor_spec().tile().get_tile_shape();
+        const int64_t tile_height = tile_shape[0];
+        const int64_t tile_width = tile_shape[1];
+        mask = create_group_norm_input_mask(
+            num_channel, num_groups, num_cores_across_channel, input_tensor.dtype(), tile_height, tile_width);
         mask = mask.to_device(input_tensor.device());
     }
     return mask;

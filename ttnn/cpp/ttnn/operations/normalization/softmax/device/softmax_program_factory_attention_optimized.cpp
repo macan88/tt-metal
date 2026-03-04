@@ -160,7 +160,8 @@ SoftmaxProgramFactoryAttentionOptimized::cached_program_t SoftmaxProgramFactoryA
         reader_compile_time_args.push_back(num_tiles_causal_mask);
     }
 
-    std::vector<uint32_t> writer_compile_time_args = {num_datum_padded};
+    std::vector<uint32_t> writer_compile_time_args = {
+        num_datum_padded, static_cast<uint32_t>(tile_height), static_cast<uint32_t>(tile_width)};
     tt::tt_metal::TensorAccessorArgs(out0_buffer).append_to(writer_compile_time_args);
     std::map<std::string, std::string> softmax_defines, writer_defines;
     if (tensor_args.mask.has_value()) {

@@ -99,7 +99,7 @@ void bind_normalization_rms_norm(nb::module_& mod) {
             - Unsharded tensors must be interleaved, sharded inputs cannot be height-sharded.
             - If `residual_input_tensor` is provided, it must match the :attr:`input_tensor`'s padded shape.
             - If the `weight`/`bias` tensors are TILE layout: last padded dim must match :attr:`input_tensor`'s last padded dim.
-            - If the `weight`/`bias` tensors are ROW_MAJOR layout: last padded dim must be TILE_WIDTH.
+            - If the `weight`/`bias` tensors are ROW_MAJOR layout: last padded dim must equal the input tensor's tile width (e.g. from :attr:`input_tensor`.tensor_spec().tile().get_tile_shape()[1]).
             - If the :attr:`input_tensor` is sharded, the :attr:`output` must also be sharded. In that case, the
               :attr:`output` memory layout and buffer type must match the :attr:`input_tensor`'s memory configuration.
         )doc";

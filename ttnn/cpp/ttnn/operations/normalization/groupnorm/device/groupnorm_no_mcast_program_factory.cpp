@@ -12,11 +12,9 @@
 #include <tt-metalium/work_split.hpp>
 #include <tt-metalium/tensor_accessor_args.hpp>
 #include <tt-metalium/host_api.hpp>
-#include <tt-metalium/constants.hpp>
 #include "ttnn/operations/math.hpp"
 
 using uint32_t = std::uint32_t;
-using namespace tt::constants;
 using namespace tt::tt_metal;
 
 namespace ttnn::prim {
@@ -24,6 +22,10 @@ namespace ttnn::prim {
 GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory::create(
     const GroupNormParams& operation_attributes, const GroupNormInputs& tensor_args, Tensor& tensor_return_value) {
     const auto& a = tensor_args.input;
+    const auto tile_shape = a.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_height = tile_shape[0];
+    const uint32_t tile_width = tile_shape[1];
+    const uint32_t tile_hw = tile_height * tile_width;
     const auto& gamma = tensor_args.gamma;
     const auto& beta = tensor_args.beta;
     const auto& input_mask = tensor_args.input_mask;
@@ -91,15 +93,15 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
     // tensor shape
     const auto& shape = a.padded_shape();
     uint32_t H = shape[1] * shape[2] * num_batches;
-    uint32_t Ht = H / TILE_HEIGHT;
+    uint32_t Ht = H / tile_height;
     uint32_t W = shape[3];
-    uint32_t Wt = W / TILE_WIDTH;
+    uint32_t Wt = W / tile_width;
 
     // Compute optimal core grid
-    TT_FATAL(W % TILE_WIDTH == 0, "W (channels): {} must be divisible by {}", W, TILE_WIDTH);
+    TT_FATAL(W % tile_width == 0, "W (channels): {} must be divisible by {}", W, tile_width);
     TT_FATAL(W % num_groups == 0, "W (channels): {} must be divisible by num_groups: {}", W, num_groups);
     uint32_t num_virtual_cols = std::min<uint32_t>(grid_size.x, num_groups);
-    while ((W / num_virtual_cols) % TILE_WIDTH != 0 || (num_groups % num_virtual_cols) != 0) {
+    while ((W / num_virtual_cols) % tile_width != 0 || (num_groups % num_virtual_cols) != 0) {
         num_virtual_cols -= 1;
     }
 
@@ -119,14 +121,14 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         num_virtual_rows);
 
     uint32_t per_core_Mt_group_1 = Ht / num_virtual_rows;
-    uint32_t per_core_M_group_1 = per_core_Mt_group_1 * TILE_HEIGHT;
+    uint32_t per_core_M_group_1 = per_core_Mt_group_1 * tile_height;
     uint32_t per_core_Mt_group_2 = 0;
     uint32_t per_core_M_group_2 = 0;
     uint32_t per_core_N = W / num_virtual_cols;
-    uint32_t per_core_Nt = (per_core_N + TILE_WIDTH - 1) / TILE_WIDTH;
+    uint32_t per_core_Nt = (per_core_N + tile_width - 1) / tile_width;
     uint32_t num_channels_per_group = W / num_groups;
     uint32_t num_channels_per_group_mod_tile_w =
-        num_channels_per_group % TILE_WIDTH == 0 ? TILE_WIDTH : num_channels_per_group % TILE_WIDTH;
+        num_channels_per_group % tile_width == 0 ? tile_width : num_channels_per_group % tile_width;
     // split each batch into multiple cores
     uint32_t num_shards_r = H / per_core_M_group_1;
     uint32_t num_cores_per_batch = num_batches > num_shards_r ? 1 : num_shards_r / num_batches;
@@ -159,7 +161,7 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
     // subblock
     uint32_t num_rows_per_batch_per_core_group_1 = per_core_M_group_1 / num_batches_per_core_group_1;
     uint32_t num_rows_per_batch_per_core_group_2 = 0;
-    auto [block_wt, num_groups_per_reset] = find_max_tile_span(per_core_N, num_channels_per_group);
+    auto [block_wt, num_groups_per_reset] = find_max_tile_span(per_core_N, num_channels_per_group, tile_width);
     uint32_t block_ht_group_1 = per_core_Mt_group_1 / num_batches_per_core_group_1;
     uint32_t block_ht_group_2 = 0;
     uint32_t subblock_wt = get_max_subblock(block_wt, 8);
@@ -186,11 +188,11 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         uint32_t per_batch_tiles = Ht / num_batches;
         per_core_Mt_group_1 = num_batches_per_core_group_1 * per_batch_tiles;
         per_core_Mt_group_2 = num_batches_per_core_group_2 * per_batch_tiles;
-        per_core_M_group_1 = per_core_Mt_group_1 * TILE_HEIGHT;
-        per_core_M_group_2 = per_core_Mt_group_2 * TILE_HEIGHT;
+        per_core_M_group_1 = per_core_Mt_group_1 * tile_height;
+        per_core_M_group_2 = per_core_Mt_group_2 * tile_height;
 
-        num_rows_per_batch_per_core_group_1 = per_batch_tiles * TILE_HEIGHT;
-        num_rows_per_batch_per_core_group_2 = per_batch_tiles * TILE_HEIGHT;
+        num_rows_per_batch_per_core_group_1 = per_batch_tiles * tile_height;
+        num_rows_per_batch_per_core_group_2 = per_batch_tiles * tile_height;
 
         block_ht_group_1 = per_batch_tiles;
         block_ht_group_2 = per_batch_tiles;
@@ -198,7 +200,7 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
 
     // shard shape per core
     uint32_t per_core_N_bytes_padded = tt::round_up(per_core_N * datum_size_bytes, output.buffer()->alignment());
-    bool reader_repack_output = (per_core_N % TILE_WIDTH) != 0;
+    bool reader_repack_output = (per_core_N % tile_width) != 0;
     bool tilize_in = a.layout() == Layout::ROW_MAJOR;
     bool untilize_out = output.layout() == Layout::ROW_MAJOR;
 
@@ -208,13 +210,13 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         per_core_N,
         num_channels_per_group);
     TT_FATAL(num_channels_per_group != 0, "num_channels_per_group should not equal 0");
-    TT_FATAL(per_core_M_group_1 % TILE_HEIGHT == 0, "per_core_M: {} divides Tile Height", per_core_M_group_1);
+    TT_FATAL(per_core_M_group_1 % tile_height == 0, "per_core_M: {} divides tile height", per_core_M_group_1);
     if (per_core_M_group_2 > 0) {
-        TT_FATAL(per_core_M_group_2 % TILE_HEIGHT == 0, "per_core_M: {} divides Tile Height", per_core_M_group_2);
+        TT_FATAL(per_core_M_group_2 % tile_height == 0, "per_core_M: {} divides tile height", per_core_M_group_2);
     }
-    TT_FATAL(per_core_M_group_1 % TILE_HEIGHT == 0, "per_core_M must be divisible by TILE_HEIGHT");
+    TT_FATAL(per_core_M_group_1 % tile_height == 0, "per_core_M must be divisible by tile_height");
     if (per_core_M_group_2 > 0) {
-        TT_FATAL(per_core_M_group_2 % TILE_HEIGHT == 0, "per_core_M must be divisible by TILE_HEIGHT");
+        TT_FATAL(per_core_M_group_2 % tile_height == 0, "per_core_M must be divisible by tile_height");
     }
 
     TT_FATAL(W % num_groups == 0, "Tensor W ({}) must be divisible by num_groups ({})", W, num_groups);
@@ -260,10 +262,10 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
 
     if (input_mask.has_value()) {
         TT_FATAL(
-            input_mask.value().padded_shape()[3] == block_wt * TILE_WIDTH,
-            "input mask width ({}) must have the same width as block_wt * TILE_WIDTH ({})",
+            input_mask.value().padded_shape()[3] == block_wt * tile_width,
+            "input mask width ({}) must have the same width as block_wt * tile_width ({})",
             input_mask.value().padded_shape()[3],
-            block_wt * TILE_WIDTH);
+            block_wt * tile_width);
     }
 
     // get addr
@@ -418,10 +420,11 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         {"num_batches", num_batches_per_core_group_1},
         {"per_core_N", per_core_Nt},
         {"per_core_N_bytes", per_core_N_bytes_padded},
-        {"per_core_N_bytes_with_stride", per_core_Nt * TILE_WIDTH * datum_size_bytes},
+        {"per_core_N_bytes_with_stride", per_core_Nt * tile_width * datum_size_bytes},
         {"datum_size_bytes", datum_size_bytes},
         {"per_core_M", per_core_Mt_group_1},
-        {"TILE_HEIGHT", TILE_HEIGHT},
+        {"TILE_HEIGHT", tile_height},
+        {"TILE_WIDTH", tile_width},
         {"block_h", block_ht_group_1},
         {"block_w", block_wt},
         {"block_hw", block_ht_group_1 * block_wt},
@@ -430,8 +433,8 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         {"block_w_last", block_wt_last},
         {"GROUP_SIZE_IS_POWER_OF_2",
          (num_channels_per_group_mod_tile_w & (num_channels_per_group_mod_tile_w - 1)) == 0},
-        {"GROUP_SIZE_SMALLER_THAN_TILE_W", num_channels_per_group < TILE_WIDTH},
-        {"group_row_offset", num_channels_per_group - ((block_wt - 1) * TILE_WIDTH)},
+        {"GROUP_SIZE_SMALLER_THAN_TILE_W", num_channels_per_group < tile_width},
+        {"group_row_offset", num_channels_per_group - ((block_wt - 1) * tile_width)},
         {"num_out_blocks", num_out_blocks},
         {"num_channels_per_group", num_channels_per_group},
         {"num_rows_per_group", num_rows_per_batch_per_core_group_1},
@@ -445,10 +448,11 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         {"num_batches", num_batches_per_core_group_2},
         {"per_core_N", per_core_Nt},
         {"per_core_N_bytes", per_core_N_bytes_padded},
-        {"per_core_N_bytes_with_stride", per_core_Nt * TILE_WIDTH * datum_size_bytes},
+        {"per_core_N_bytes_with_stride", per_core_Nt * tile_width * datum_size_bytes},
         {"datum_size_bytes", datum_size_bytes},
         {"per_core_M", per_core_Mt_group_2},
-        {"TILE_HEIGHT", TILE_HEIGHT},
+        {"TILE_HEIGHT", tile_height},
+        {"TILE_WIDTH", tile_width},
         {"block_h", block_ht_group_2},
         {"block_w", block_wt},
         {"block_hw", block_ht_group_2 * block_wt},
@@ -457,8 +461,8 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         {"block_w_last", block_wt_last},
         {"GROUP_SIZE_IS_POWER_OF_2",
          (num_channels_per_group_mod_tile_w & (num_channels_per_group_mod_tile_w - 1)) == 0},
-        {"GROUP_SIZE_SMALLER_THAN_TILE_W", num_channels_per_group < TILE_WIDTH},
-        {"group_row_offset", num_channels_per_group - ((block_wt - 1) * TILE_WIDTH)},
+        {"GROUP_SIZE_SMALLER_THAN_TILE_W", num_channels_per_group < tile_width},
+        {"group_row_offset", num_channels_per_group - ((block_wt - 1) * tile_width)},
         {"num_out_blocks", num_out_blocks},
         {"num_channels_per_group", num_channels_per_group},
         {"num_rows_per_group", num_rows_per_batch_per_core_group_2},
@@ -511,6 +515,7 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         .append_to(writer_mcast_sender_compile_time_args_group_1);
     tt::tt_metal::TensorAccessorArgs(input_mask.has_value() ? input_mask.value().buffer() : nullptr)
         .append_to(writer_mcast_sender_compile_time_args_group_1);
+    writer_mcast_sender_compile_time_args_group_1.push_back(tile_width);
 
     tt::tt_metal::TensorAccessorArgs(output.buffer()).append_to(writer_mcast_sender_compile_time_args_group_2);
     tt::tt_metal::TensorAccessorArgs(gamma.has_value() ? gamma.value().buffer() : nullptr)
@@ -519,6 +524,7 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         .append_to(writer_mcast_sender_compile_time_args_group_2);
     tt::tt_metal::TensorAccessorArgs(input_mask.has_value() ? input_mask.value().buffer() : nullptr)
         .append_to(writer_mcast_sender_compile_time_args_group_2);
+    writer_mcast_sender_compile_time_args_group_2.push_back(tile_width);
 
     std::unordered_map<std::string, uint32_t> writer_named_compile_time_args_group_1 = {
         {"is_mcast_sender", 1},
@@ -528,7 +534,7 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         {"per_core_M", per_core_Mt_group_1},
         {"per_core_N", per_core_Nt},
         {"per_core_N_bytes", per_core_N * datum_size_bytes},
-        {"per_core_N_bytes_with_stride", per_core_Nt * TILE_WIDTH * datum_size_bytes},
+        {"per_core_N_bytes_with_stride", per_core_Nt * tile_width * datum_size_bytes},
         {"num_groups_per_core", num_groups_per_core},
         {"num_batches_per_core", num_batches_per_core_group_1},
         {"num_cols_per_group", num_channels_per_group_mod_tile_w},
@@ -536,8 +542,8 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         {"block_w_last", block_wt_last},
         {"GROUP_SIZE_IS_POWER_OF_2",
          (num_channels_per_group_mod_tile_w & (num_channels_per_group_mod_tile_w - 1)) == 0},
-        {"GROUP_SIZE_SMALLER_THAN_TILE_W", num_channels_per_group < TILE_WIDTH},
-        {"group_row_offset", num_channels_per_group - ((block_wt - 1) * TILE_WIDTH)},
+        {"GROUP_SIZE_SMALLER_THAN_TILE_W", num_channels_per_group < tile_width},
+        {"group_row_offset", num_channels_per_group - ((block_wt - 1) * tile_width)},
         {"num_out_blocks", num_out_blocks},
         {"block_h", block_ht_group_1},
         {"block_w", block_wt},
@@ -553,7 +559,7 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         {"per_core_M", per_core_Mt_group_2},
         {"per_core_N", per_core_Nt},
         {"per_core_N_bytes", per_core_N * datum_size_bytes},
-        {"per_core_N_bytes_with_stride", per_core_Nt * TILE_WIDTH * datum_size_bytes},
+        {"per_core_N_bytes_with_stride", per_core_Nt * tile_width * datum_size_bytes},
         {"num_groups_per_core", num_groups_per_core},
         {"num_batches_per_core", num_batches_per_core_group_2},
         {"num_cols_per_group", num_channels_per_group_mod_tile_w},
@@ -561,8 +567,8 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         {"block_w_last", block_wt_last},
         {"GROUP_SIZE_IS_POWER_OF_2",
          (num_channels_per_group_mod_tile_w & (num_channels_per_group_mod_tile_w - 1)) == 0},
-        {"GROUP_SIZE_SMALLER_THAN_TILE_W", num_channels_per_group < TILE_WIDTH},
-        {"group_row_offset", num_channels_per_group - ((block_wt - 1) * TILE_WIDTH)},
+        {"GROUP_SIZE_SMALLER_THAN_TILE_W", num_channels_per_group < tile_width},
+        {"group_row_offset", num_channels_per_group - ((block_wt - 1) * tile_width)},
         {"num_out_blocks", num_out_blocks},
         {"block_h", block_ht_group_2},
         {"block_w", block_wt},
@@ -579,8 +585,8 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         writer_named_compile_time_args_group_1["page_size"] = beta_stick_size;
         writer_named_compile_time_args_group_2["page_size"] = beta_stick_size;
     } else {
-        writer_named_compile_time_args_group_1["page_size"] = TILE_HW * datum_size_bytes;
-        writer_named_compile_time_args_group_2["page_size"] = TILE_HW * datum_size_bytes;
+        writer_named_compile_time_args_group_1["page_size"] = tile_hw * datum_size_bytes;
+        writer_named_compile_time_args_group_2["page_size"] = tile_hw * datum_size_bytes;
     }
 
     std::string writer_kernel =
@@ -638,7 +644,7 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         {"per_core_M", per_core_Mt_group_1},
         {"per_core_N", per_core_Nt},
         {"per_core_MN", per_core_Mt_group_1 * per_core_Nt},
-        {"per_core_N_tile_bytes", per_core_Nt * TILE_HW * datum_size_bytes},
+        {"per_core_N_tile_bytes", per_core_Nt * tile_hw * datum_size_bytes},
         {"num_groups_per_reset", num_groups_per_reset},
         {"single_tile_size_bytes", single_tile_size},
         {"num_tiles_per_batch", per_core_Mt_group_1 * Wt / num_batches_per_core_group_1},
@@ -647,12 +653,15 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         {"block_w_last", block_wt_last},
         {"GROUP_SIZE_IS_POWER_OF_2",
          (num_channels_per_group_mod_tile_w & (num_channels_per_group_mod_tile_w - 1)) == 0},
-        {"GROUP_SIZE_SMALLER_THAN_TILE_W", num_channels_per_group < TILE_WIDTH},
-        {"group_row_offset", num_channels_per_group - ((block_wt - 1) * TILE_WIDTH)},
+        {"GROUP_SIZE_SMALLER_THAN_TILE_W", num_channels_per_group < tile_width},
+        {"group_row_offset", num_channels_per_group - ((block_wt - 1) * tile_width)},
         {"num_out_blocks", num_out_blocks},
         {"num_channels_per_group", num_channels_per_group},
         {"num_rows_per_group", num_rows_per_batch_per_core_group_1},
         {"reciprocal_size", num_reciprocals},
+        {"TILE_HEIGHT", tile_height},
+        {"TILE_WIDTH", tile_width},
+        {"TILE_HW", tile_hw},
     };
 
     std::unordered_map<std::string, uint32_t> mcast_sender_compute_named_compile_time_args_group_2 = {
@@ -670,7 +679,7 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         {"per_core_M", per_core_Mt_group_2},
         {"per_core_N", per_core_Nt},
         {"per_core_MN", per_core_Mt_group_2 * per_core_Nt},
-        {"per_core_N_tile_bytes", per_core_Nt * TILE_HW * datum_size_bytes},
+        {"per_core_N_tile_bytes", per_core_Nt * tile_hw * datum_size_bytes},
         {"num_groups_per_reset", num_groups_per_reset},
         {"single_tile_size_bytes", single_tile_size},
         {"num_tiles_per_batch", per_core_Mt_group_2 * Wt / num_batches_per_core_group_2},
@@ -679,12 +688,15 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
         {"block_w_last", block_wt_last},
         {"GROUP_SIZE_IS_POWER_OF_2",
          (num_channels_per_group_mod_tile_w & (num_channels_per_group_mod_tile_w - 1)) == 0},
-        {"GROUP_SIZE_SMALLER_THAN_TILE_W", num_channels_per_group < TILE_WIDTH},
-        {"group_row_offset", num_channels_per_group - ((block_wt - 1) * TILE_WIDTH)},
+        {"GROUP_SIZE_SMALLER_THAN_TILE_W", num_channels_per_group < tile_width},
+        {"group_row_offset", num_channels_per_group - ((block_wt - 1) * tile_width)},
         {"num_out_blocks", num_out_blocks},
         {"num_channels_per_group", num_channels_per_group},
         {"num_rows_per_group", num_rows_per_batch_per_core_group_2},
         {"reciprocal_size", num_reciprocals},
+        {"TILE_HEIGHT", tile_height},
+        {"TILE_WIDTH", tile_width},
+        {"TILE_HW", tile_hw},
     };
 
     auto [math_fidelity, math_approx_mode, fp32_dest_acc_en, packer_l1_acc, dst_full_sync_en] =
@@ -1054,15 +1066,15 @@ GroupNormNoMcastProgramFactory::cached_program_t GroupNormNoMcastProgramFactory:
             curr_virtual_core_x++;
             if (gamma.has_value()) {
                 gamma_tile_start_id = (gamma_tile_start_id + gamma_beta_num_cols_tile_per_core) %
-                                      (gamma.value().physical_volume() / TILE_WIDTH);
+                                      (gamma.value().physical_volume() / tile_width);
             }
             if (beta.has_value()) {
                 beta_tile_start_id = (beta_tile_start_id + gamma_beta_num_cols_tile_per_core) %
-                                     (beta.value().physical_volume() / TILE_WIDTH);
+                                     (beta.value().physical_volume() / tile_width);
             }
             if (input_mask.has_value()) {
                 input_mask_tile_start_id = (input_mask_tile_start_id + input_mask_num_tiles_per_core) %
-                                           (input_mask.value().physical_volume() / TILE_HW);
+                                           (input_mask.value().physical_volume() / tile_hw);
             }
         }
 

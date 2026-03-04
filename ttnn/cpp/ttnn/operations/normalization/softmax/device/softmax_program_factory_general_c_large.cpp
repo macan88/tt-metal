@@ -23,6 +23,9 @@ SoftmaxProgramFactoryGeneralCLarge::cached_program_t SoftmaxProgramFactoryGenera
 
     // Constants
     const auto& input = tensor_args.input_tensor;
+    const auto tile_shape = input.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_height = tile_shape[0];
+    const uint32_t tile_width = tile_shape[1];
     const auto dim = static_cast<int>(static_cast<unsigned char>(attributes.dim));
     const auto& compute_kernel_config = attributes.compute_kernel_config;
     auto* const device = input.device();
@@ -31,8 +34,8 @@ SoftmaxProgramFactoryGeneralCLarge::cached_program_t SoftmaxProgramFactoryGenera
     const auto shape = input.padded_shape();
     const auto H = shape[-2];
     const auto W = shape[-1];
-    const auto Ht = H / tt::constants::TILE_HEIGHT;
-    const auto Wt = W / tt::constants::TILE_WIDTH;
+    const auto Ht = H / tile_height;
+    const auto Wt = W / tile_width;
 
     // Work split
     const uint32_t num_tiles = input.physical_volume() / shape[dim] / H / W * Ht * Wt;

@@ -5,22 +5,24 @@
 #include "ttnn/operations/normalization/layernorm/device/layernorm_common.hpp"
 #include "ttnn/operations/normalization/layernorm/device/layernorm_types.hpp"
 #include <tt-metalium/host_api.hpp>
-#include <tt-metalium/constants.hpp>
 
 namespace ttnn::prim {
 
-LayerNormProgramConfig create_layernorm_program_config(const std::optional<tt::tt_metal::ShardSpec>& shard_spec) {
-    if (!shard_spec.has_value()) {
+LayerNormProgramConfig create_layernorm_program_config(const Tensor& tensor) {
+    if (!tensor.shard_spec().has_value()) {
         return LayerNormDefaultProgramConfig{};
     }
-    const auto& spec = shard_spec.value();
+    const auto& spec = tensor.shard_spec().value();
+    const auto tile_shape = tensor.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_height = tile_shape[0];
+    const uint32_t tile_width = tile_shape[1];
     const auto bbox = spec.grid.bounding_box();
     return LayerNormShardedMultiCoreProgramConfig{
         .compute_with_storage_grid_size =
             {bbox.end_coord.x - bbox.start_coord.x + 1, bbox.end_coord.y - bbox.start_coord.y + 1},
         .subblock_w = 1,
-        .block_h = spec.shape[0] / tt::constants::TILE_HEIGHT,
-        .block_w = spec.shape[1] / tt::constants::TILE_WIDTH,
+        .block_h = spec.shape[0] / tile_height,
+        .block_w = spec.shape[1] / tile_width,
         .inplace = false,
     };
 }

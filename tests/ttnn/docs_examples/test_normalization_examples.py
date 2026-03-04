@@ -63,6 +63,8 @@ def test_group_norm(device):
         num_groups=num_groups,
         num_cores_across_channel=1,  # As explained in the Limitations, supply 1 for height sharded input tensors
         data_type=ttnn.bfloat8_b,
+        tile_height=32,
+        tile_width=32,
     )
     input_mask_tensor = ttnn.to_device(input_mask_tensor, device)
 

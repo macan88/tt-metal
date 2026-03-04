@@ -13,7 +13,6 @@
 #include "ttnn/operations/eltwise/unary/common/unary_op_utils.hpp"
 
 #include <tt-metalium/host_api.hpp>
-#include <tt-metalium/constants.hpp>
 #include <tt-metalium/tensor_accessor_args.hpp>
 #include <tt-metalium/program_descriptors.hpp>
 
@@ -21,7 +20,6 @@
 #include <bit>
 
 using uint32_t = std::uint32_t;
-using namespace tt::constants;
 using namespace tt::tt_metal;
 
 namespace ttnn::prim {
@@ -166,9 +164,13 @@ tt::tt_metal::ProgramDescriptor LayerNormMultiCoreProgramFactory::create_descrip
     auto [math_fidelity, math_approx_mode, fp32_dest_acc_en, packer_l1_acc, dst_full_sync_en] =
         get_compute_kernel_config_args(device->arch(), compute_kernel_config);
 
+    const auto tile_shape = a.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_height = tile_shape[0];
+    const uint32_t tile_width = tile_shape[1];
+
     // Data span in tiles, rounded up to tile boundaries
-    uint32_t Wt = Wp / TILE_WIDTH;
-    uint32_t Ht = Hp / TILE_HEIGHT;
+    uint32_t Wt = Wp / tile_width;
+    uint32_t Ht = Hp / tile_height;
 
     // Block size that maximizes dest usage depending on
     // whether fp32 accumulation is enabled
@@ -332,6 +334,8 @@ tt::tt_metal::ProgramDescriptor LayerNormMultiCoreProgramFactory::create_descrip
     if (!large_tensor_needed) {
         reader_compile_time_args.push_back((std::uint32_t)use_welford);
     }
+    reader_compile_time_args.push_back(tile_width);
+    reader_compile_time_args.push_back(tile_height);
     tt::tt_metal::TensorAccessorArgs(a.buffer()).append_to(reader_compile_time_args);
     tt::tt_metal::TensorAccessorArgs(b ? b->buffer() : nullptr).append_to(reader_compile_time_args);
     tt::tt_metal::TensorAccessorArgs(gamma ? gamma->buffer() : nullptr).append_to(reader_compile_time_args);
@@ -403,13 +407,14 @@ tt::tt_metal::ProgramDescriptor LayerNormMultiCoreProgramFactory::create_descrip
     std::vector<uint32_t> compute_args = {Wt, block_size, gamma.has_value(), beta.has_value(), fp32_dest_acc_en};
     if (use_welford_and_not_rms_norm) {
         compute_args.push_back(W);
-        compute_args.push_back(ttnn::types::TILE_SIZE);
+        compute_args.push_back(tile_width);
         compute_args.push_back(static_cast<uint32_t>(rms_norm));
         compute_args.push_back(static_cast<uint32_t>(fuse_pre_add));
     } else {
         compute_args.push_back(float32_reduction);
         compute_args.push_back(legacy_rsqrt);
         compute_args.push_back(W);
+        compute_args.push_back(tile_width);
     }
 
     // The large-tensor non-Welford reduce kernel needs

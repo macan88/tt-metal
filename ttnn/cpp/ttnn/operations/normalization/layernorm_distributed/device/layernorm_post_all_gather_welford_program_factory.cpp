@@ -16,7 +16,6 @@
 #include <variant>
 
 using uint32_t = std::uint32_t;
-using namespace tt::constants;
 
 namespace ttnn::prim {
 
@@ -62,15 +61,19 @@ LayerNormPostAllGatherWelfordProgramFactory::cached_program_t LayerNormPostAllGa
     const auto& gamma = tensor_args.gamma;
     const auto& beta = tensor_args.beta;
 
+    const auto tile_shape = a.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_height = tile_shape[0];
+    const uint32_t tile_width = tile_shape[1];
+
     const bool is_rmsnorm = operation_attributes.norm_type == LayerNormDistributedType::RMSNORM;
     const auto& shape = a.padded_shape();
     const uint32_t W = shape[-1], H = shape[-2];
     const uint32_t HW = H * W;
     const uint32_t NC = a.physical_volume() / HW;
 
-    const uint32_t Wt = W / TILE_WIDTH;
-    const uint32_t Ht = H / TILE_HEIGHT;
-    const uint32_t stats_tiles_cols = stats.padded_shape()[-1] / TILE_WIDTH;
+    const uint32_t Wt = W / tile_width;
+    const uint32_t Ht = H / tile_height;
+    const uint32_t stats_tiles_cols = stats.padded_shape()[-1] / tile_width;
     const uint32_t tile_cols_per_device = is_rmsnorm ? 1 : 2;
     const uint32_t num_devices = stats_tiles_cols / tile_cols_per_device;
     TT_FATAL(num_devices > 0, "Number of devices must be greater than 0");
@@ -155,10 +158,10 @@ LayerNormPostAllGatherWelfordProgramFactory::cached_program_t LayerNormPostAllGa
     const uint32_t out0_tiles = cb_length;
 
     TT_FATAL(
-        W <= TILE_WIDTH * in0_tiles,
+        W <= tile_width * in0_tiles,
         "W ({}) exceeds the maximum supported size of tile buffer ({} * {}, kernel limitation right now)",
         W,
-        TILE_WIDTH,
+        tile_width,
         in0_tiles);
     TT_FATAL(
         in0_tiles % block_size == 0,

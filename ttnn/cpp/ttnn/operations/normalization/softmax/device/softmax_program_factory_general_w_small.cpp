@@ -23,6 +23,9 @@ SoftmaxProgramFactoryGeneralWSmall::cached_program_t SoftmaxProgramFactoryGenera
 
     // Constants
     const auto& input_tensor = tensor_args.input_tensor;
+    const auto tile_shape = input_tensor.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_height = tile_shape[0];
+    const uint32_t tile_width = tile_shape[1];
     const auto& compute_kernel_config = attributes.compute_kernel_config;
     auto* const device = input_tensor.device();
     const auto grid_coord = device->compute_with_storage_grid_size();
@@ -30,8 +33,8 @@ SoftmaxProgramFactoryGeneralWSmall::cached_program_t SoftmaxProgramFactoryGenera
     const auto shape = input_tensor.padded_shape();
     const auto H = shape[-2];
     const auto W = shape[-1];
-    const auto Ht = H / tt::constants::TILE_HEIGHT;
-    const auto Wt = W / tt::constants::TILE_WIDTH;
+    const auto Ht = H / tile_height;
+    const auto Wt = W / tile_width;
 
     // Work split
     auto num = input_tensor.physical_volume() / H / W;
@@ -126,9 +129,9 @@ SoftmaxProgramFactoryGeneralWSmall::cached_program_t SoftmaxProgramFactoryGenera
         }
 
         float scaler = 1.0f;
-        uint32_t mask_w = input_tensor.logical_shape()[-1] % tt::constants::TILE_WIDTH;
+        uint32_t mask_w = input_tensor.logical_shape()[-1] % tile_width;
         if (mask_w == 0) {
-            mask_w = tt::constants::TILE_WIDTH;
+            mask_w = tile_width;
         }
         const std::vector<uint32_t> reader_args = {
             input_tensor.buffer()->address(),

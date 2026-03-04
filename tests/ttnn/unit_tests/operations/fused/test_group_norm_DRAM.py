@@ -266,11 +266,13 @@ def test_sdxl_base_group_norm_split(device, N, C, H, W, num_groups, num_splits):
     # Generate input mask
     num_groups_per_split = num_groups // num_splits  # 16
     C_per_split = C // num_splits
-    input_mask_tensor = ttnn.create_group_norm_input_mask(C_per_split, num_groups_per_split, 1, ttnn.DataType.BFLOAT8_B)
+    input_mask_tensor = ttnn.create_group_norm_input_mask(
+        C_per_split, num_groups_per_split, 1, ttnn.DataType.BFLOAT8_B, tile_height=32, tile_width=32
+    )
     input_mask_tensor = ttnn.to_device(input_mask_tensor, device)
 
     input_negative_mask_tensor = ttnn.create_group_norm_input_negative_mask(
-        C_per_split, num_groups_per_split, 1, ttnn.DataType.BFLOAT8_B
+        C_per_split, num_groups_per_split, 1, ttnn.DataType.BFLOAT8_B, tile_height=32, tile_width=32
     )
     input_negative_mask_tensor = ttnn.to_device(input_negative_mask_tensor, device)
 
@@ -361,7 +363,9 @@ def test_group_norm_DRAM_oft(device, N, C, H, W, num_groups, num_out_blocks, cor
         input_tensor_row_major, output_tensor_shape=out_shape, pad_value=0, use_multicore=True
     )
 
-    input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, grid_size.y, ttnn.DataType.BFLOAT16)
+    input_mask_tensor = ttnn.create_group_norm_input_mask(
+        C, num_groups, grid_size.y, ttnn.DataType.BFLOAT16, tile_height=32, tile_width=32
+    )
     input_mask_tensor = ttnn.to_device(input_mask_tensor, device)
     # gamma/beta
     gamma = ttnn.create_group_norm_weight_bias_rm(torch_weight, C, grid_size.y)

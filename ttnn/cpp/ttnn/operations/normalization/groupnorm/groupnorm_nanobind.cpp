@@ -131,29 +131,47 @@ void bind_normalization_group_norm_operation(nb::module_& mod) {
             nb::arg("use_welford") = false));
     mod.def(
         "create_group_norm_input_mask",
-        [](int64_t num_channel, int64_t num_groups, int64_t num_cores_across_channel, DataType data_type) {
-            return create_group_norm_input_mask(num_channel, num_groups, num_cores_across_channel, data_type);
+        [](int64_t num_channel,
+           int64_t num_groups,
+           int64_t num_cores_across_channel,
+           DataType data_type,
+           int64_t tile_height,
+           int64_t tile_width) {
+            return create_group_norm_input_mask(
+                num_channel, num_groups, num_cores_across_channel, data_type, tile_height, tile_width);
         },
         nb::arg("num_channel"),
         nb::arg("num_groups"),
         nb::arg("num_cores_across_channel"),
-        nb::arg("data_type") = DataType::BFLOAT16,
+        nb::arg("data_type"),
+        nb::arg("tile_height"),
+        nb::arg("tile_width"),
         R"doc(
             C++ implementation of create_group_norm_input_mask.
-            Returns a ttnn.Tensor of shape [1, num_groups, 32, 32*block_wt], dtype=ttnn.DataType.BFLOAT16.
+            Returns a ttnn.Tensor of shape [1, num_groups, tile_height, tile_width*block_wt].
+            tile_height and tile_width should match the input tensor's tile shape (e.g. from tensor.tensor_spec().tile().get_tile_shape()).
         )doc");
     mod.def(
         "create_group_norm_input_negative_mask",
-        [](int64_t num_channel, int64_t num_groups, int64_t num_cores_across_channel, DataType data_type) {
-            return create_group_norm_input_negative_mask(num_channel, num_groups, num_cores_across_channel, data_type);
+        [](int64_t num_channel,
+           int64_t num_groups,
+           int64_t num_cores_across_channel,
+           DataType data_type,
+           int64_t tile_height,
+           int64_t tile_width) {
+            return create_group_norm_input_negative_mask(
+                num_channel, num_groups, num_cores_across_channel, data_type, tile_height, tile_width);
         },
         nb::arg("num_channel"),
         nb::arg("num_groups"),
         nb::arg("num_cores_across_channel"),
-        nb::arg("data_type") = DataType::BFLOAT16,
+        nb::arg("data_type"),
+        nb::arg("tile_height"),
+        nb::arg("tile_width"),
         R"doc(
             C++ implementation of create_group_norm_input_negative_mask.
-            Returns a ttnn.Tensor of shape [1, num_groups, 32, 32*block_wt], dtype=ttnn.DataType.BFLOAT16.
+            Returns a ttnn.Tensor of shape [1, num_groups, tile_height, tile_width*block_wt].
+            tile_height and tile_width should match the input tensor's tile shape.
         )doc");
 }
 }  // namespace

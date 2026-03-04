@@ -62,8 +62,7 @@ def _create_layernorm_op_descriptor(
 
     # Create appropriate program config based on input tensor if not provided
     if program_config is None:
-        shard_spec = input_tensor.memory_config().shard_spec if input_tensor.is_sharded() else None
-        program_config = ttnn.create_layernorm_program_config(shard_spec)
+        program_config = ttnn.create_layernorm_program_config(input_tensor)
 
     # Check if Welford is enabled and create reciprocal tensor if needed
     recip_tensor = None

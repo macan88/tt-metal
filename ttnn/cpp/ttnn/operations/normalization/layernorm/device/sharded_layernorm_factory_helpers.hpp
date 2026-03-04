@@ -206,6 +206,7 @@ struct CompileTimeArgsContext {
     uint32_t out_single_tile_size = 0;
     uint32_t block_wt_resharded = 0;
     uint32_t K = 0;
+    uint32_t tile_width = 0;
 
     // Flags
     bool rms_norm = false;

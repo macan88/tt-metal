@@ -208,7 +208,7 @@ void bind_normalization_softmax_scale_mask_operation(nb::module_& mod) {
 
             Limitations:
                 * All tensors must be on-device.
-                * For ROW_MAJOR masks: intermediate dimensions (except last two) must be 1; last dimension must equal TILE_WIDTH; width must align to input tensor's tile width.
+                * For ROW_MAJOR masks: intermediate dimensions (except last two) must be 1; last dimension must equal the tile width; width must align to input tensor's tile width.
     )doc";
 
     ttnn::bind_function<"scale_mask_softmax">(
@@ -346,7 +346,7 @@ void bind_normalization_softmax_scale_mask_inplace_operation(nb::module_& mod) {
 
             Limitations:
                 * All tensors must be on-device.
-                * For unsharded ROW_MAJOR masks: intermediate dimensions (except last two) must be 1; last dimension must equal TILE_WIDTH; width must align to input tensor.
+                * For unsharded ROW_MAJOR masks: intermediate dimensions (except last two) must be 1; last dimension must equal the tile width; width must align to input tensor.
                 * For sharded inputs: mask must be TILE layout with identical padded shape to input.
                 * Internal block size constraints may restrict in-place operation for very large width tensors.
     )doc";

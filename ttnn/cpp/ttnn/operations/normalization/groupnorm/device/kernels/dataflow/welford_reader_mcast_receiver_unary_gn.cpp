@@ -55,9 +55,12 @@ void kernel_main() {
     constexpr uint32_t single_tile_size_bytes = get_tile_size(cb_ex_partial);
     constexpr uint32_t src0_tile_bytes = get_tile_size(cb_in0);
 
+    constexpr uint32_t tile_height = get_named_compile_time_arg_val("TILE_HEIGHT");
+    constexpr uint32_t tile_width = get_named_compile_time_arg_val("TILE_WIDTH");
+
     // This is the stride between two consecutive local means/variances in the cb_ex_partial
     constexpr uint32_t local_stride = 2;
-    constexpr uint32_t single_row_size_bytes = single_tile_size_bytes / tt::constants::TILE_HEIGHT;
+    constexpr uint32_t single_row_size_bytes = single_tile_size_bytes / tile_height;
     constexpr uint32_t local_stride_per_group = local_stride * single_row_size_bytes;
 
     const auto src_a = TensorAccessor(src0_args, src_addr, src0_tile_bytes);
@@ -68,7 +71,7 @@ void kernel_main() {
     for (uint32_t m = 0; m < per_core_M; ++m) {
         cb_reserve_back(cb_repack, per_core_N);
         uint32_t l1_write_addr_repack = get_write_ptr(cb_repack);
-        for (uint32_t i = 0; i < tt::constants::TILE_HEIGHT; ++i) {
+        for (uint32_t i = 0; i < tile_height; ++i) {
             noc_async_read(noc_addr_in0, l1_write_addr_repack, per_core_N_bytes);
             noc_addr_in0 += per_core_N_bytes;
             l1_write_addr_repack += per_core_N_bytes_with_stride;
@@ -132,8 +135,8 @@ void kernel_main() {
             auto p_local_vars = reinterpret_cast<volatile uint16_t*>(local_vars_ptr);
 
             auto local_result = combine_welford_stats<
-                tt::constants::TILE_WIDTH,
-                num_channels_per_group * num_rows_per_group / tt::constants::TILE_WIDTH,
+                tile_width,
+                num_channels_per_group * num_rows_per_group / tile_width,
                 local_stride>(p_local_means, p_local_vars);
 
             // Write this to cb_ex_global
@@ -190,7 +193,7 @@ void kernel_main() {
         cb_wait_front(cb_repack_out, per_core_N);
         const uint32_t in0_l1_read_addr = get_read_ptr(cb_repack_out);
         uint64_t noc_addr_in0 = get_noc_addr(in0_l1_read_addr);
-        for (uint32_t i = 0; i < tt::constants::TILE_HEIGHT; ++i) {
+        for (uint32_t i = 0; i < tile_height; ++i) {
             noc_async_read(noc_addr_in0, l1_write_addr_repack, per_core_N_bytes);
             noc_addr_in0 += per_core_N_bytes_with_stride;
             l1_write_addr_repack += per_core_N_bytes;

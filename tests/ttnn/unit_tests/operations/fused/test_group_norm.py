@@ -68,7 +68,9 @@ def test_group_norm_with_height_sharded(device, N, C, H, W, num_groups, use_welf
     )
 
     # input mask
-    input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, grid_size.y, ttnn.DataType.BFLOAT8_B)
+    input_mask_tensor = ttnn.create_group_norm_input_mask(
+        C, num_groups, grid_size.y, ttnn.DataType.BFLOAT8_B, tile_height=32, tile_width=32
+    )
     input_mask_tensor = ttnn.to_device(input_mask_tensor, device)
 
     gamma = ttnn.create_group_norm_weight_bias_rm(torch_weight, C, grid_size.y)
@@ -154,7 +156,9 @@ def test_group_norm_with_block_sharded_v2_8x4_grid(device, N, C, H, W, num_group
     )
 
     # input mask
-    input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, grid_size.y, ttnn.DataType.BFLOAT8_B)
+    input_mask_tensor = ttnn.create_group_norm_input_mask(
+        C, num_groups, grid_size.y, ttnn.DataType.BFLOAT8_B, tile_height=32, tile_width=32
+    )
     input_mask_tensor = ttnn.to_device(input_mask_tensor, device)
 
     # gamma/beta
@@ -253,7 +257,9 @@ def test_group_norm_with_block_sharded_v2_8x8_grid(device, N, C, H, W, num_group
     )
 
     # input mask
-    input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, grid_size.y, ttnn.DataType.BFLOAT8_B)
+    input_mask_tensor = ttnn.create_group_norm_input_mask(
+        C, num_groups, grid_size.y, ttnn.DataType.BFLOAT8_B, tile_height=32, tile_width=32
+    )
     input_mask_tensor = ttnn.to_device(input_mask_tensor, device)
 
     # gamma/beta
@@ -342,7 +348,9 @@ def test_group_norm_with_block_sharded_v2_8x8_grid_tile_layout(device, N, C, H, 
     )
 
     # input mask
-    input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, grid_size.y, ttnn.DataType.BFLOAT8_B)
+    input_mask_tensor = ttnn.create_group_norm_input_mask(
+        C, num_groups, grid_size.y, ttnn.DataType.BFLOAT8_B, tile_height=32, tile_width=32
+    )
     input_mask_tensor = ttnn.to_device(input_mask_tensor, device)
 
     # gamma/beta
@@ -484,7 +492,9 @@ def test_sdxl_base_group_norm(device, input_shape, use_welford, perf_test_mode=F
     )
 
     # Generate input mask
-    input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, grid_size.y, ttnn.DataType.BFLOAT8_B)
+    input_mask_tensor = ttnn.create_group_norm_input_mask(
+        C, num_groups, grid_size.y, ttnn.DataType.BFLOAT8_B, tile_height=32, tile_width=32
+    )
     input_mask_tensor = ttnn.to_device(input_mask_tensor, device)
 
     # Generate shard config
@@ -558,11 +568,13 @@ def test_sdxl_base_group_norm_negative_mask(device, input_shape, perf_test_mode=
     )
 
     # Generate input mask
-    input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, grid_size.x, ttnn.DataType.BFLOAT8_B)
+    input_mask_tensor = ttnn.create_group_norm_input_mask(
+        C, num_groups, grid_size.x, ttnn.DataType.BFLOAT8_B, tile_height=32, tile_width=32
+    )
     input_mask_tensor = ttnn.to_device(input_mask_tensor, device)
 
     input_negative_mask_tensor = ttnn.create_group_norm_input_negative_mask(
-        C, num_groups, grid_size.x, ttnn.DataType.BFLOAT8_B
+        C, num_groups, grid_size.x, ttnn.DataType.BFLOAT8_B, tile_height=32, tile_width=32
     )
     input_negative_mask_tensor = ttnn.to_device(input_negative_mask_tensor, device)
 
@@ -639,7 +651,9 @@ def test_group_norm_compute_config(device, N, C, H, W, num_groups):
     torch_output_tensor = torch_output_tensor.permute(0, 2, 3, 1).view(N, 1, W * H, C)
 
     # Generate input mask
-    input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, grid_size.y, ttnn.DataType.BFLOAT16)
+    input_mask_tensor = ttnn.create_group_norm_input_mask(
+        C, num_groups, grid_size.y, ttnn.DataType.BFLOAT16, tile_height=32, tile_width=32
+    )
     tt_input_mask_tensor = ttnn.to_device(input_mask_tensor, device)
 
     # Generate shard config
@@ -749,10 +763,14 @@ def test_group_norm_oft(device, N, C, H, W, num_groups, shard, eps, use_negative
     else:
         grid_x = grid_size.x
         grid_y = grid_size.y
-    input_mask_tensor = ttnn.create_group_norm_input_mask(C, num_groups, grid_y, ttnn.DataType.BFLOAT16)
+    input_mask_tensor = ttnn.create_group_norm_input_mask(
+        C, num_groups, grid_y, ttnn.DataType.BFLOAT16, tile_height=32, tile_width=32
+    )
     input_mask_tensor = ttnn.to_device(input_mask_tensor, device)
     if use_negative_mask:
-        input_nmask_tensor = ttnn.create_group_norm_input_negative_mask(C, num_groups, grid_y, ttnn.DataType.BFLOAT16)
+        input_nmask_tensor = ttnn.create_group_norm_input_negative_mask(
+            C, num_groups, grid_y, ttnn.DataType.BFLOAT16, tile_height=32, tile_width=32
+        )
         input_nmask_tensor = ttnn.to_device(input_nmask_tensor, device)
     else:
         input_nmask_tensor = None
@@ -889,7 +907,7 @@ def test_group_norm_no_input_mask(device, N, C, H, W, num_groups):
 @pytest.mark.parametrize(
     "input_shape, num_groups, msg_pattern",
     [
-        ((2, 1, 16, 32), 8, "must be a multiple of the tile size"),
+        ((2, 1, 16, 32), 8, "must be a multiple of the tile"),  # tile size or tile height
     ],
 )
 def test_group_norm_negative_tests(

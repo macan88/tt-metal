@@ -35,8 +35,8 @@ void kernel_main() {
     constexpr uint32_t block_w = get_compile_time_arg_val(9);
 
     constexpr uint32_t size = get_compile_time_arg_val(10);
-
-    constexpr auto gamma_args = TensorAccessorArgs<11>();
+    // Index 11 is tile_hw (used by welford writer); legacy writer shares same compile args layout
+    constexpr auto gamma_args = TensorAccessorArgs<12>();
     constexpr auto beta_args = TensorAccessorArgs<gamma_args.next_compile_time_args_offset()>();
     constexpr auto input_mask_args = TensorAccessorArgs<beta_args.next_compile_time_args_offset()>();
 

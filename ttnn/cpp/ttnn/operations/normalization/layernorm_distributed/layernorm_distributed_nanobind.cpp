@@ -74,7 +74,7 @@ void bind_normalization_layernorm_pre_all_gather_operation(nb::module_& mod) {
               Limitations:
                 - Input tensors must be on-device and rank 4.
                 - Unsharded runs: :attr:`input_tensor` must be interleaved.
-                - Sharded runs: inputs cannot be height-sharded, padded height must equal TILE_HEIGHT (32).
+                - Sharded runs: inputs cannot be height-sharded; padded height must equal the tensor's tile height.
                 - When using :attr:`residual_input_tensor` with sharding, it must match the :attr:`input_tensor` padded shape and sharding.
                 - When using Welford algorithm (use_welford=True), :attr:`recip_tensor` must be provided.
         )doc",
@@ -157,10 +157,10 @@ void bind_normalization_layernorm_post_all_gather_operation(nb::module_& mod) {
 
                 Limitations:
                   - Input tensors must be on-device and rank 4.
-                  - The last padded dim of :attr:`stats` must be a multiple of TILE_WIDTH.
+                  - The last padded dim of :attr:`stats` must be a multiple of the tile width.
                   - The first three padded dims of :attr:`stats` must match :attr:`input_tensor`.
-                  - If :attr:`weight` (gamma) is provided, :attr:`bias` (beta) must also be provided with matching layouts with their last padded dim matching TILE_WIDTH.
-                  - Sharded runs: inputs cannot be height-sharded, padded height must equal TILE_HEIGHT (32), and :attr:`stats` must be sharded with `num_cores=1` and expected tile columns per device.
+                  - If :attr:`weight` (gamma) is provided, :attr:`bias` (beta) must also be provided with matching layouts with their last padded dim matching the tile width.
+                  - Sharded runs: inputs cannot be height-sharded; padded height must equal the tensor's tile height; and :attr:`stats` must be sharded with `num_cores=1` and expected tile columns per device.
         )doc",
         ttnn::nanobind_arguments_t{
             nb::arg("input_tensor"),

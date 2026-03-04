@@ -24,8 +24,9 @@ void kernel_main() {
     constexpr uint32_t block_w = get_compile_time_arg_val(9);
 
     constexpr uint32_t size = get_compile_time_arg_val(10);
+    constexpr uint32_t tile_hw = get_compile_time_arg_val(11);
 
-    constexpr auto gamma_args = TensorAccessorArgs<11>();
+    constexpr auto gamma_args = TensorAccessorArgs<12>();
     constexpr auto beta_args = TensorAccessorArgs<gamma_args.next_compile_time_args_offset()>();
     constexpr auto input_mask_args = TensorAccessorArgs<beta_args.next_compile_time_args_offset()>();
 
@@ -68,7 +69,7 @@ void kernel_main() {
 
     if constexpr (fuse_gamma) {
         constexpr uint32_t gamma_tile_bytes = get_tile_size(cb_gamma);
-        constexpr uint32_t gamma_element_bytes = gamma_tile_bytes / tt::constants::TILE_HW;
+        constexpr uint32_t gamma_element_bytes = gamma_tile_bytes / tile_hw;
         constexpr uint32_t gamma_face_bytes = gamma_element_bytes * tt::constants::FACE_HW;
         constexpr uint32_t gamma_face_w_bytes = gamma_element_bytes * tt::constants::FACE_WIDTH;
         const auto gamma = TensorAccessor(gamma_args, gamma_addr, size);
@@ -111,7 +112,7 @@ void kernel_main() {
         // Then copy the second set of 32 bytes into the second face
 
         constexpr uint32_t beta_tile_bytes = get_tile_size(cb_beta);
-        constexpr uint32_t beta_element_bytes = beta_tile_bytes / tt::constants::TILE_HW;
+        constexpr uint32_t beta_element_bytes = beta_tile_bytes / tile_hw;
         constexpr uint32_t beta_face_bytes = beta_element_bytes * tt::constants::FACE_HW;
         constexpr uint32_t beta_face_w_bytes = beta_element_bytes * tt::constants::FACE_WIDTH;
         const auto beta = TensorAccessor(beta_args, beta_addr, size);

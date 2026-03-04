@@ -48,7 +48,8 @@ void kernel_main() {
 
     constexpr uint32_t block_w_minus_one = block_w - 1;
     constexpr uint32_t block_w_minus_two = block_w - 2;
-    constexpr uint32_t tile_w_minux_group_size = tt::constants::TILE_WIDTH - num_cols_per_group;
+    constexpr uint32_t tile_width = get_compile_time_arg_val(input_mask_args.next_compile_time_args_offset());
+    constexpr uint32_t tile_w_minux_group_size = tile_width - num_cols_per_group;
 
     const uint32_t eps_val = get_arg_val<uint32_t>(2);
     const uint32_t out_addr = get_arg_val<uint32_t>(3);

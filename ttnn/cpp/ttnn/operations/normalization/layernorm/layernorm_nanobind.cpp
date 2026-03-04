@@ -96,15 +96,15 @@ void bind_normalization_layernorm_operation(nb::module_& mod) {
     mod.def(
         "create_layernorm_program_config",
         &ttnn::prim::create_layernorm_program_config,
-        nb::arg("shard_spec") = nb::none(),
+        nb::arg("tensor"),
         R"doc(
-        Creates a program config from shard spec.
+        Creates a program config from tensor.
 
-        If shard_spec has value, creates a sharded config derived from it.
+        If tensor has a shard spec, creates a sharded config derived from it (using the tensor's tile shape).
         Otherwise, returns a default DRAM config.
 
         Args:
-            shard_spec (Optional[tt.ShardSpec]): The shard specification. Defaults to None.
+            tensor (ttnn.Tensor): The input tensor (used for shard spec and tile shape).
 
         Returns:
             ttnn.LayerNormProgramConfig: The program configuration (either LayerNormDefaultProgramConfig or LayerNormShardedMultiCoreProgramConfig).
@@ -187,8 +187,8 @@ void bind_normalization_layernorm_operation(nb::module_& mod) {
             - Unsharded tensors must be interleaved, sharded tensors cannot be height sharded.
             - If the input is sharded, the :attr:`output` and :attr:`residual_input_tensor` must have identical shard spec and memory config.
             - If `residual_input_tensor` is provided, it must match the input's padded shape.
-            - If TILE: `weight` and `bias` padded dim must match input's last padded dim; padded height must equal TILE_HEIGHT (i.e. 32).
-            - If ROW_MAJOR: `weight` and `bias` last padded dim must be TILE_WIDTH and the stick count must align with the input width.
+            - If TILE: `weight` and `bias` padded dim must match input's last padded dim; padded height must equal the input tile height.
+            - If ROW_MAJOR: `weight` and `bias` last padded dim must match the input tile width and the stick count must align with the input width.
 
         )doc";
 

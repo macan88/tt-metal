@@ -5,9 +5,7 @@
 #include "groupnorm_device_operation.hpp"
 #include "ttnn/tensor/tensor_ops.hpp"
 #include "ttnn/device_operation.hpp"
-#include <tt-metalium/constants.hpp>
 
-using namespace tt::constants;
 using namespace tt::tt_metal;
 
 namespace ttnn::prim {
@@ -15,6 +13,8 @@ namespace ttnn::prim {
 GroupNormDeviceOperation::program_factory_t GroupNormDeviceOperation::select_program_factory(
     const operation_attributes_t& args, const tensor_args_t& tensor_args) {
     const auto& input = tensor_args.input;
+    const auto tile_shape = input.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_width = tile_shape[1];
 
     if (input.is_sharded()) {
         return GroupNormShardedProgramFactory{};
@@ -28,7 +28,7 @@ GroupNormDeviceOperation::program_factory_t GroupNormDeviceOperation::select_pro
     uint32_t num_virtual_cols = std::min<uint32_t>(grid_size.x, args.num_groups);
 
     while (num_virtual_cols > 0 &&
-           ((W / num_virtual_cols) % TILE_WIDTH != 0 || (args.num_groups % num_virtual_cols) != 0)) {
+           ((W / num_virtual_cols) % tile_width != 0 || (args.num_groups % num_virtual_cols) != 0)) {
         num_virtual_cols -= 1;
     }
 
@@ -50,17 +50,21 @@ void GroupNormDeviceOperation::validate_on_program_cache_miss(
     const auto& negative_mask = tensor_args.negative_mask;
     const auto& reciprocals = tensor_args.reciprocals;
 
+    const auto tile_shape = a.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_height = tile_shape[0];
+    const uint32_t tile_width = tile_shape[1];
+
     TT_FATAL(a.dtype() == DataType::BFLOAT16, "Input tensor must be BFLOAT16, got: {}", a.dtype());
     TT_FATAL(a.storage_type() == StorageType::DEVICE, "Operands to groupnorm need to be on device!");
     TT_FATAL(a.buffer() != nullptr, "Operands to groupnorm need to be allocated in buffers on device!");
     TT_FATAL(a.padded_shape()[3] % args.num_groups == 0, "channel must be divisible by num_groups!");
     TT_FATAL(a.padded_shape()[1] == 1, "input tensor shape[1] must be 1!");
     TT_FATAL(
-        (a.padded_shape()[1] * a.padded_shape()[2]) % TILE_HEIGHT == 0,
-        "H*W ({}*{}) must be a multiple of the tile size ({})",
+        (a.padded_shape()[1] * a.padded_shape()[2]) % tile_height == 0,
+        "H*W ({}*{}) must be a multiple of the tile height ({})",
         a.padded_shape()[1],
         a.padded_shape()[2],
-        TILE_HEIGHT);
+        tile_height);
 
     if (gamma.has_value()) {
         if (gamma.value().layout() == Layout::TILE) {
@@ -73,8 +77,9 @@ void GroupNormDeviceOperation::validate_on_program_cache_miss(
             TT_FATAL(
                 gamma.value().buffer() != nullptr, "Operands to groupnorm need to be allocated in buffers on device!");
             TT_FATAL(
-                gamma.value().padded_shape()[2] == TILE_HEIGHT,
-                "Gamma tensor height must be TILE_HEIGHT (32), got: {}",
+                gamma.value().padded_shape()[2] == tile_height,
+                "Gamma tensor height must match input tile height ({}), got: {}",
+                tile_height,
                 gamma.value().padded_shape()[2]);
         } else {
             TT_FATAL(
@@ -82,8 +87,9 @@ void GroupNormDeviceOperation::validate_on_program_cache_miss(
                 "Gamma tensor must have ROW_MAJOR layout, got: {}",
                 gamma.value().layout());
             TT_FATAL(
-                (gamma.value().padded_shape()[3] == TILE_WIDTH),
-                "Gamma tensor inner dimension must be TILE_WIDTH (32), got: {}",
+                (gamma.value().padded_shape()[3] == tile_width),
+                "Gamma tensor inner dimension must match input tile width ({}), got: {}",
+                tile_width,
                 gamma.value().padded_shape()[3]);
             TT_FATAL(a.device() == gamma.value().device(), "Input and gamma tensors must be on same device");
             TT_FATAL(
@@ -113,8 +119,9 @@ void GroupNormDeviceOperation::validate_on_program_cache_miss(
             TT_FATAL(
                 beta.value().buffer() != nullptr, "Operands to groupnorm need to be allocated in buffers on device!");
             TT_FATAL(
-                beta.value().padded_shape()[2] == TILE_HEIGHT,
-                "Beta tensor height must be TILE_HEIGHT (32), got: {}",
+                beta.value().padded_shape()[2] == tile_height,
+                "Beta tensor height must match input tile height ({}), got: {}",
+                tile_height,
                 beta.value().padded_shape()[2]);
         } else {
             TT_FATAL(
@@ -122,8 +129,9 @@ void GroupNormDeviceOperation::validate_on_program_cache_miss(
                 "Beta tensor must have ROW_MAJOR layout, got: {}",
                 beta.value().layout());
             TT_FATAL(
-                beta.value().padded_shape()[3] == TILE_WIDTH,
-                "Beta tensor inner dimension must be TILE_WIDTH (32), got: {}",
+                beta.value().padded_shape()[3] == tile_width,
+                "Beta tensor inner dimension must match input tile width ({}), got: {}",
+                tile_width,
                 beta.value().padded_shape()[3]);
             TT_FATAL(a.device() == beta.value().device(), "Input and beta tensors must be on same device");
             TT_FATAL(
@@ -146,12 +154,14 @@ void GroupNormDeviceOperation::validate_on_program_cache_miss(
             input_mask.value().padded_shape()[1],
             args.num_groups);
         TT_FATAL(
-            input_mask.value().padded_shape()[2] == TILE_HEIGHT,
-            "Input mask height must be TILE_HEIGHT (32), got: {}",
+            input_mask.value().padded_shape()[2] == tile_height,
+            "Input mask height must match input tile height ({}), got: {}",
+            tile_height,
             input_mask.value().padded_shape()[2]);
         TT_FATAL(
-            input_mask.value().padded_shape()[3] % TILE_WIDTH == 0,
-            "Input mask inner dimension must be divisible by TILE_WIDTH (32), got: {}",
+            input_mask.value().padded_shape()[3] % tile_width == 0,
+            "Input mask inner dimension must be divisible by tile width ({}), got: {}",
+            tile_width,
             input_mask.value().padded_shape()[3]);
     }
 
@@ -170,15 +180,15 @@ void GroupNormDeviceOperation::validate_on_program_cache_miss(
             negative_mask.value().padded_shape()[1],
             args.num_groups);
         TT_FATAL(
-            negative_mask.value().padded_shape()[2] == TILE_HEIGHT,
-            "Negative mask padded shape[2] must be equal to TILE_HEIGHT, but is {} and TILE_HEIGHT is {}",
-            negative_mask.value().padded_shape()[2],
-            TILE_HEIGHT);
+            negative_mask.value().padded_shape()[2] == tile_height,
+            "Negative mask padded shape[2] must match input tile height ({}), but is {}",
+            tile_height,
+            negative_mask.value().padded_shape()[2]);
         TT_FATAL(
-            negative_mask.value().padded_shape()[3] % TILE_WIDTH == 0,
-            "Negative mask padded shape[3] must be divisible by TILE_WIDTH, but is {} and TILE_WIDTH is {}",
-            negative_mask.value().padded_shape()[3],
-            TILE_WIDTH);
+            negative_mask.value().padded_shape()[3] % tile_width == 0,
+            "Negative mask padded shape[3] must be divisible by tile width ({}), but is {}",
+            tile_width,
+            negative_mask.value().padded_shape()[3]);
         TT_FATAL(a.is_sharded(), "Negative mask support is only available for sharded input tensors.");
         TT_FATAL(
             a.layout() == Layout::ROW_MAJOR,

@@ -40,7 +40,8 @@ namespace CMAKE_UNIQUE_NAMESPACE {
 bool is_softmax_general_w_small_available(
     const Tensor& tensor, const DeviceComputeKernelConfig& compute_kernel_config) {
     auto w = tensor.logical_shape()[-1];
-    int32_t Wt = (w + tt::constants::TILE_WIDTH - 1) / tt::constants::TILE_WIDTH;
+    const uint32_t tile_width = tensor.tensor_spec().tile().get_tile_shape()[1];
+    int32_t Wt = (w + tile_width - 1) / tile_width;
 
     auto arch = tensor.device()->arch();
     auto [math_fidelity, math_approx_mode, fp32_dest_acc_en, packer_l1_acc, dst_full_sync_en] =
@@ -77,7 +78,8 @@ bool is_softmax_general_w_small_available(
 bool is_softmax_general_h_small_available(
     const Tensor& tensor, const DeviceComputeKernelConfig& compute_kernel_config) {
     auto h = tensor.logical_shape()[-2];
-    int32_t Ht = (h + tt::constants::TILE_HEIGHT - 1) / tt::constants::TILE_HEIGHT;
+    const uint32_t tile_height = tensor.tensor_spec().tile().get_tile_shape()[0];
+    int32_t Ht = (h + tile_height - 1) / tile_height;
 
     auto arch = tensor.device()->arch();
     auto [math_fidelity, math_approx_mode, fp32_dest_acc_en, packer_l1_acc, dst_full_sync_en] =

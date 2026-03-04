@@ -15,7 +15,6 @@
 #include <variant>
 
 using uint32_t = std::uint32_t;
-using namespace tt::constants;
 
 namespace ttnn::prim {
 
@@ -52,14 +51,17 @@ LayerNormPreAllGather2DProgramFactory::cached_program_t LayerNormPreAllGather2DP
     using namespace CMAKE_UNIQUE_NAMESPACE;
 
     const auto& a = tensor_args.input;
+    const auto tile_shape = a.tensor_spec().tile().get_tile_shape();
+    const uint32_t tile_height = tile_shape[0];
+    const uint32_t tile_width = tile_shape[1];
     const bool is_rmsnorm = operation_attributes.norm_type == LayerNormDistributedType::RMSNORM;
     const auto& shape = a.padded_shape();
     const uint32_t W = shape[-1], H = shape[-2];
     const uint32_t HW = H * W;
     const uint32_t NC = a.physical_volume() / HW;
 
-    const uint32_t Wt = W / TILE_WIDTH;
-    const uint32_t Ht = H / TILE_HEIGHT;
+    const uint32_t Wt = W / tile_width;
+    const uint32_t Ht = H / tile_height;
 
     uint32_t num_tile_rows = NC * Ht;
 
@@ -90,10 +92,10 @@ LayerNormPreAllGather2DProgramFactory::cached_program_t LayerNormPreAllGather2DP
     uint32_t out0_tiles = is_rmsnorm ? 1 : 2;
 
     TT_FATAL(
-        W <= TILE_WIDTH * in0_tiles,
+        W <= tile_width * in0_tiles,
         "W ({}) exceeds the maximum supported size of tile buffer ({} * {}, kernel limitation right now).",
         W,
-        TILE_WIDTH,
+        tile_width,
         in0_tiles);
     TT_FATAL(
         in0_tiles % block_size == 0,

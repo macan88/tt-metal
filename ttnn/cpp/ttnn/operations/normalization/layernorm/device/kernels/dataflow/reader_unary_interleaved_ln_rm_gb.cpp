@@ -30,7 +30,8 @@ void kernel_main() {
 
     constexpr uint32_t blk = get_compile_time_arg_val(0);  // needed for correctness of softmax/LN kernels
     constexpr bool use_welford = get_compile_time_arg_val(1) == 1;
-    constexpr auto src0_args = TensorAccessorArgs<2>();
+    // Indices 2 and 3 are tile_width and tile_height (match factory layout used by reader_unary_interleaved_ln)
+    constexpr auto src0_args = TensorAccessorArgs<4>();
     constexpr auto src1_args = TensorAccessorArgs<src0_args.next_compile_time_args_offset()>();
     constexpr auto gamma_args = TensorAccessorArgs<src1_args.next_compile_time_args_offset()>();
     constexpr auto beta_args = TensorAccessorArgs<gamma_args.next_compile_time_args_offset()>();

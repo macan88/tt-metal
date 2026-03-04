@@ -73,7 +73,7 @@ void bind_normalization_rmsnorm_pre_all_gather_operation(nb::module_& mod) {
               Limitations:
                 - All tensors must be on-device.
                 - Unsharded inputs must be interleaved
-                - Sharded inputs cannot be height-sharded, padded height must equal TILE_HEIGHT (32). If :attr:`residual_input_tensor` is provided, it must match input's padded shape and sharding.
+                - Sharded inputs cannot be height-sharded; padded height must equal the tensor's tile height (e.g. from the tensor's tile shape). If :attr:`residual_input_tensor` is provided, it must match input's padded shape and sharding.
               )doc",
         ttnn::nanobind_arguments_t{
             nb::arg("input_tensor"),
@@ -153,9 +153,9 @@ void bind_normalization_rmsnorm_post_all_gather_operation(nb::module_& mod) {
 
                 Limitations:
                   - All tensors must be on-device.
-                  - The last padded dim of :attr:`stats` must be a multiple of TILE_WIDTH, and its first three padded dims must match :attr:`input_tensor`.
-                  - If :attr:`weight` (gamma) is provided, :attr:`bias` (beta) must also be provided. Gamma and beta must have the same layout. If this is ROW_MAJOR, last padded dim must be TILE_WIDTH.
-                  - Sharded runs: inputs cannot be height-sharded; padded height must equal TILE_HEIGHT (32). When sharded, :attr:`stats` must be sharded across one core.
+                  - The last padded dim of :attr:`stats` must be a multiple of the tile width, and its first three padded dims must match :attr:`input_tensor`.
+                  - If :attr:`weight` (gamma) is provided, :attr:`bias` (beta) must also be provided. Gamma and beta must have the same layout. If this is ROW_MAJOR, last padded dim must equal the tile width.
+                  - Sharded runs: inputs cannot be height-sharded; padded height must equal the tensor's tile height. When sharded, :attr:`stats` must be sharded across one core.
         )doc",
         ttnn::nanobind_arguments_t{
             nb::arg("input_tensor"),

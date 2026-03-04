@@ -94,7 +94,7 @@ ttnn.scale_mask_softmax(
 **Mask Requirements**:
 - Input tensor: BFLOAT16, FLOAT32, BFLOAT8_B with TILE layout
 - Mask tensor: BFLOAT16, BFLOAT8_B with TILE or ROW_MAJOR layout
-- For ROW_MAJOR masks: intermediate dimensions must be 1, last dimension must equal TILE_WIDTH
+- For ROW_MAJOR masks: intermediate dimensions must be 1, last dimension must equal the input tensor's tile width
 
 ### 3. ttnn.softmax_in_place()
 
