@@ -5,6 +5,7 @@
 #pragma once
 
 #include "mesh_command_queue_base.hpp"
+#include "impl/context/context_id.hpp"
 
 #include "tt_metal/common/multi_producer_single_consumer_queue.hpp"
 #include "dispatch/cq_shared_state.hpp"
@@ -39,6 +40,7 @@ struct DeviceMemoryAddress {
 
 class FDMeshCommandQueue final : public MeshCommandQueueBase {
 private:
+    ContextId context_id_;
     // This class can now access private members of FDMeshCommandQueue
     // This is used to access the system memory manager from cq test fixtures
     friend class tt_dispatch_tests::Common::FDMeshCQTestAccessor;

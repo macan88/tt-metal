@@ -1117,6 +1117,13 @@ void ReadMeshDeviceProfilerResults(
         return;
     }
 
+    // We don't profile mock devices
+    // Note: The rest of this file needs to pass in context id to all MetalContext queries
+    if (MetalContext::instance(mesh_device.context_id()).get_cluster().get_target_device_type() ==
+        tt::TargetDevice::Mock) {
+        return;
+    }
+
     TT_ASSERT(mesh_device.is_initialized());
 
     const std::unique_ptr<ProfilerStateManager>& profiler_state_manager =

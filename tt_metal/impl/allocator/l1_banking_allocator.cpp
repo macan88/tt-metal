@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -169,16 +168,18 @@ L1BankingAllocator::L1BankingAllocator(const AllocatorConfig& alloc_config) : Al
 }
 
 AllocatorConfig L1BankingAllocator::generate_config(
+    ContextId context_id,
     ChipId device_id,
     uint8_t num_hw_cqs,
     size_t l1_small_size,
     size_t trace_region_size,
     size_t worker_l1_unreserved_start,
     BankMapping l1_bank_remap) {
-    const auto& cluster = MetalContext::instance().get_cluster();
-    const auto& hal = MetalContext::instance().hal();
+    const auto& cluster = MetalContext::instance(context_id).get_cluster();
+    const auto& hal = MetalContext::instance(context_id).hal();
     const metal_SocDescriptor& soc_desc = cluster.get_soc_desc(device_id);
-    const auto& dispatch_core_config = MetalContext::instance().get_dispatch_core_manager().get_dispatch_core_config();
+    const auto& dispatch_core_config =
+        MetalContext::instance(context_id).get_dispatch_core_manager().get_dispatch_core_config();
     CoreType dispatch_core_type = get_core_type_from_config(dispatch_core_config);
     // Construct allocator config from soc_desc
     // Take max alignment to satisfy NoC rd/wr constraints

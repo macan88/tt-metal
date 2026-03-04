@@ -64,6 +64,11 @@ void FabricFirmwareInitializer::configure() {
 }
 
 void FabricFirmwareInitializer::teardown(std::unordered_set<InitializerKey>& init_done) {
+    if (descriptor_->is_mock_device()) {
+        init_done.erase(key);
+        return;
+    }
+
     TT_FATAL(
         !init_done.contains(InitializerKey::Dispatch),
         "FabricFirmwareInitializer must be torn down after DispatchKernelInitializer");
@@ -134,7 +139,7 @@ void FabricFirmwareInitializer::teardown(std::unordered_set<InitializerKey>& ini
 
 void FabricFirmwareInitializer::post_teardown() {
     // Reset fabric config
-    tt::tt_fabric::SetFabricConfig(tt::tt_fabric::FabricConfig::DISABLED);
+    tt::tt_fabric::SetFabricConfigWithContext(descriptor_->context_id(), tt::tt_fabric::FabricConfig::DISABLED);
 }
 
 bool FabricFirmwareInitializer::is_initialized() const { return initialized_; }

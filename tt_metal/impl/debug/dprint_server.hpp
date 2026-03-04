@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "impl/context/context_id.hpp"
 #include <umd/device/types/cluster_descriptor_types.hpp>
 #include <llrt/rtoptions.hpp>
 #include <memory>
@@ -17,7 +18,7 @@ namespace tt::tt_metal {
 class DPrintServer {
 public:
     // Constructor/destructor, reads dprint options from RTOptions.
-    DPrintServer(llrt::RunTimeOptions& rtoptions);
+    DPrintServer(llrt::RunTimeOptions& rtoptions, ContextId context_id = SILICON_CONTEXT_ID);
     ~DPrintServer();
 
     // Sets whether the print server is muted. Calling this function while a kernel is running may

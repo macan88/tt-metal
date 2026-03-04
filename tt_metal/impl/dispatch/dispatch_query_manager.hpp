@@ -12,6 +12,7 @@
 #include "data_types.hpp"
 #include "dispatch_core_common.hpp"
 #include "dispatch_core_manager.hpp"
+#include "impl/context/context_id.hpp"
 #include <umd/device/types/xy_pair.hpp>
 
 namespace tt::tt_metal {
@@ -30,7 +31,7 @@ public:
     DispatchQueryManager& operator=(DispatchQueryManager&& other) noexcept = delete;
     DispatchQueryManager(const DispatchQueryManager&) = delete;
     DispatchQueryManager(DispatchQueryManager&& other) noexcept = delete;
-    DispatchQueryManager(uint8_t num_hw_cqs);
+    DispatchQueryManager(uint8_t num_hw_cqs, ContextId context_id = SILICON_CONTEXT_ID);
 
     // dispatch_s related queries
     bool dispatch_s_enabled() const;
@@ -44,6 +45,7 @@ public:
 private:
     void reset(uint8_t num_hw_cqs);
 
+    ContextId context_id_;
     bool dispatch_s_enabled_ = false;
     bool distributed_dispatcher_ = false;
     NOC go_signal_noc_ = NOC::NOC_0;

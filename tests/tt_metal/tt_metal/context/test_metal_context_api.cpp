@@ -13,6 +13,7 @@
 #include "impl/context/metalium_env.hpp"
 #include "impl/context/metal_context.hpp"
 #include "impl/context/context_id.hpp"
+#include "system_mesh.hpp"
 #include "tt_cluster.hpp"
 #include "impl/device/mock_device_util.hpp"
 

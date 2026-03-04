@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "impl/context/context_id.hpp"
 #include <cstdint>
 #include <unordered_map>
 #include <map>
@@ -36,12 +37,12 @@ void ReadDeviceProfilerResultsInternal(
 
 void LaunchIntervalBasedProfilerReadThread(const std::vector<IDevice*>& active_devices);
 uint32_t get_profiler_dram_bank_size_per_risc_bytes(llrt::RunTimeOptions& rtoptions);
-uint32_t get_profiler_dram_bank_size_per_risc_bytes();
+uint32_t get_profiler_dram_bank_size_per_risc_bytes(ContextId context_id = SILICON_CONTEXT_ID);
 uint32_t get_profiler_dram_bank_size_for_hal_allocation(llrt::RunTimeOptions& rtoptions);
 
 struct ProfilerStateManager {
 public:
-    ProfilerStateManager();
+    ProfilerStateManager(ContextId context_id = SILICON_CONTEXT_ID);
 
     ~ProfilerStateManager() = default;
 
@@ -63,6 +64,7 @@ public:
 
     static constexpr CoreCoord SYNC_CORE = {0, 0};
 
+    ContextId context_id_;
     std::unordered_map<ChipId, DeviceProfiler> device_profiler_map;
     mutable std::recursive_mutex device_profiler_map_mutex;
 

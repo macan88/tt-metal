@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "buffer.hpp"
+#include "impl/context/context_id.hpp"
 #include "core_coord.hpp"
 #include "dispatch_settings.hpp"
 #include "launch_message_ring_buffer_state.hpp"
@@ -29,7 +30,7 @@ namespace tt::tt_metal {
 
 class HWCommandQueue {
 public:
-    HWCommandQueue(IDevice* device, uint32_t id, NOC noc_index);
+    HWCommandQueue(ContextId context_id, IDevice* device, uint32_t id, NOC noc_index);
 
     ~HWCommandQueue() = default;
 
@@ -48,6 +49,7 @@ public:
     void terminate();
 
 private:
+    ContextId context_id_;
     uint32_t id_;
     SystemMemoryManager& manager_;
 

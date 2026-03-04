@@ -196,17 +196,20 @@ void MetalContext::initialize(
         max_alignment);
 
     // Initialize inspector
-    inspector_data_ = Inspector::initialize();
-    // Set fw_compile_hash for Inspector RPC build environment info
-    Inspector::set_build_env_fw_compile_hash(fw_compile_hash);
+    // TODO: For now skip it for the mock device as there may be a physical device already using the server address
+    if (query_->cluster_->get_target_device_type() != tt::TargetDevice::Mock) {
+        inspector_data_ = Inspector::initialize(context_id_);
+        // Set fw_compile_hash for Inspector RPC build environment info
+        Inspector::set_build_env_fw_compile_hash(fw_compile_hash, context_id_);
+    }
 
     // Reset timeout detection state
     dispatch_timeout_detection_processed_ = false;
 
     // Initialize dispatch state
     bool is_galaxy_cluster = get_cluster().is_galaxy_cluster();
-    dispatch_core_manager_ = std::make_unique<dispatch_core_manager>(dispatch_core_config, num_hw_cqs);
-    dispatch_query_manager_ = std::make_unique<DispatchQueryManager>(num_hw_cqs);
+    dispatch_core_manager_ = std::make_unique<dispatch_core_manager>(dispatch_core_config, num_hw_cqs, context_id_);
+    dispatch_query_manager_ = std::make_unique<DispatchQueryManager>(num_hw_cqs, context_id_);
     dispatch_mem_map_[enchantum::to_underlying(CoreType::WORKER)] =
         std::make_unique<DispatchMemMap>(CoreType::WORKER, num_hw_cqs, hal(), is_galaxy_cluster);
     dispatch_mem_map_[enchantum::to_underlying(CoreType::ETH)] =
@@ -216,10 +219,10 @@ void MetalContext::initialize(
     if (rtoptions().get_feature_enabled(tt::llrt::RunTimeDebugFeatureDprint)) {
         TT_FATAL(!rtoptions().get_profiler_enabled(), "Both DPRINT and Profiler cannot be enabled at the same time.");
         rtoptions().set_disable_dma_ops(true);  // DMA is not thread-safe
-        dprint_server_ = std::make_unique<DPrintServer>(rtoptions());
+        dprint_server_ = std::make_unique<DPrintServer>(rtoptions(), context_id_);
     }
-    watcher_server_ =
-        std::make_unique<WatcherServer>();  // Watcher server always created, since we use it to register kernels
+    watcher_server_ = std::make_unique<WatcherServer>(
+        context_id_);  // Watcher server always created, since we use it to register kernels
     noc_debug_state_ = std::make_unique<NOCDebugState>();
 
     if (rtoptions().get_experimental_noc_debug_dump_enabled()) {
@@ -232,7 +235,7 @@ void MetalContext::initialize(
 
     if (rtoptions().get_profiler_enabled()) {
         TT_FATAL(hal().get_arch() != ARCH::QUASAR, "Device profiler is not yet supported on Quasar.");
-        profiler_state_manager_ = std::make_unique<ProfilerStateManager>();
+        profiler_state_manager_ = std::make_unique<ProfilerStateManager>(context_id_);
     }
 
     data_collector_ = std::make_unique<DataCollector>();
@@ -262,11 +265,10 @@ void MetalContext::initialize(
         std::bind(&MetalContext::get_control_plane, this),
         *dispatch_core_manager_,
         get_dispatch_ignore_cores);
-
     risc_firmware_initializer_->run_async_build_phase(device_ids);
 
     // Set internal routing for active ethernet cores, this is required for our FW to run
-    if (has_flag(MetalContext::instance().get_fabric_manager(), tt_fabric::FabricManagerMode::INIT_FABRIC) &&
+    if (has_flag(MetalContext::instance(context_id_).get_fabric_manager(), tt_fabric::FabricManagerMode::INIT_FABRIC) &&
         get_cluster().get_target_device_type() != tt::TargetDevice::Mock) {
         get_cluster().set_internal_routing_info_for_ethernet_cores(this->get_control_plane(), true);
     }
@@ -289,8 +291,8 @@ void MetalContext::initialize(
 void MetalContext::reinitialize_dispatch_managers() {
     // Reinitialize dispatch core manager and query manager to pick up current dispatch mode
     // This refreshes cached dispatch/compute core allocations when transitioning SD<->FD
-    dispatch_core_manager_ = std::make_unique<dispatch_core_manager>(dispatch_core_config_, num_hw_cqs_);
-    dispatch_query_manager_ = std::make_unique<DispatchQueryManager>(num_hw_cqs_);
+    dispatch_core_manager_ = std::make_unique<dispatch_core_manager>(dispatch_core_config_, num_hw_cqs_, context_id_);
+    dispatch_query_manager_ = std::make_unique<DispatchQueryManager>(num_hw_cqs_, context_id_);
 }
 
 void MetalContext::set_fast_dispatch_mode(bool enable) {
@@ -337,7 +339,7 @@ void MetalContext::teardown() {
     teardown_dispatch_state();
 
     // Clear dispatch, dispatch_s and prefetcher core info in inspector data
-    Inspector::clear_all_core_info();
+    Inspector::clear_all_core_info(context_id_);
     // Deinitialize inspector
     inspector_data_.reset();
 
@@ -358,6 +360,7 @@ std::mutex g_instance_mutex;
 bool registered_handlers = false;
 
 MetalContext& MetalContext::instance(ContextId context_id) {
+    TT_FATAL(context_id >= 0, "context_id {} is invalid.", context_id);
     TT_FATAL(context_id < MAX_CONTEXT_COUNT, "context_id {} is out of range (max {}).", context_id, MAX_CONTEXT_COUNT);
 
     MetalContext* instance = g_instances[context_id].load(std::memory_order_acquire);
@@ -528,7 +531,7 @@ void MetalContext::initialize_base_objects() {
 }
 
 MetalContext::MetalContext(ContextId context_id, const std::shared_ptr<MetaliumEnv>& metalium_env) :
-    context_id_(context_id), query_(metalium_env), device_manager_(std::make_unique<DeviceManager>()) {
+    context_id_(context_id), query_(metalium_env), device_manager_(std::make_unique<DeviceManager>(context_id)) {
     query_->acquire(context_id_);
     initialize_base_objects();
 
@@ -806,6 +809,7 @@ void MetalContext::init_context_descriptor(
         dispatch_core_config_,
         l1_bank_remap_,
         query_->get_descriptor().is_mock_device() ? query_->get_descriptor().mock_cluster_desc_path() : ""));
+    context_descriptor_->context_id_ = this->context_id_;
 }
 
 void MetalContext::init_risc_fw_context_descriptor(int num_hw_cqs, size_t worker_l1_size) {
@@ -827,6 +831,7 @@ void MetalContext::init_risc_fw_context_descriptor(int num_hw_cqs, size_t worker
         {},
         {},
         rtoptions().get_mock_cluster_desc_path()));
+    risc_fw_context_descriptor_->context_id_ = this->context_id_;
 }
 
 void MetalContext::construct_control_plane(const std::filesystem::path& mesh_graph_desc_path) {
@@ -956,7 +961,7 @@ void MetalContext::on_dispatch_timeout_detected() {
         // Serialize Inspector RPC data if enabled
         if (rtoptions().get_serialize_inspector_on_dispatch_timeout()) {
             log_info(tt::LogMetal, "Serializing Inspector RPC data");
-            Inspector::serialize_rpc();
+            Inspector::serialize_rpc(context_id_);
         }
 
         // Execute command if specified (mostly used to call tt-triage when a timeout occurs)

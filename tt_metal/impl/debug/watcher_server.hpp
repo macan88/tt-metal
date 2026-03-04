@@ -9,12 +9,14 @@
 #include <umd/device/types/cluster_descriptor_types.hpp>
 #include <string>
 
+#include "impl/context/context_id.hpp"
+
 struct metal_SocDescriptor;
 
 namespace tt::tt_metal {
 class WatcherServer {
 public:
-    WatcherServer();
+    explicit WatcherServer(ContextId context_id = SILICON_CONTEXT_ID);
     ~WatcherServer();
 
     void init_devices();    // Always runs, puts watcher mailboxes in a default state
