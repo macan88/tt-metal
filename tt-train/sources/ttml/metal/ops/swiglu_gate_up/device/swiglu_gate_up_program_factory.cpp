@@ -273,10 +273,8 @@ SwiGLUGateUpProgramFactory::cached_program_t SwiGLUGateUpProgramFactory::create(
     // -------------------------------------------------------------------------
     std::vector<uint32_t> compute_ct_args = {
         per_core_N,
-        per_core_N_rounded,
         kBlockSize,
         Wt,
-        num_n_blocks,
         block_h,
         num_m_blocks,
     };

@@ -18,18 +18,43 @@
 #include "api/compute/tile_move_copy.h"
 #include "tt-train/sources/ttml/metal/common/compute_utils.hpp"
 
-// ============================================================================
-// SwiGLU Gate-Up Compute Kernel — M sub-blocking only.
-// One N-block of weights (W1/W3) per load; no N-block batching.
+// ----------------------------------------------------------------------
+// SwiGLU Gate-Up Compute Kernel (XW1, XW3, then M = SiLU(XW1) * XW3)
+//
+// Phase A: XW1[r,:], XW3[r,:] accumulated across K-blocks using L1 acc
+//          directly into cb_xw1_acc / cb_xw3_acc. One N-block of W1/W3
+//          at a time; block_h M-rows per sync (M sub-blocking only).
+// Phase B: M[r, :] = SiLU(XW1[r, :]) * XW3[r, :] for block_h rows, pack to cb_m_out.
+// ----------------------------------------------------------------------
+//
+// ========================= Compute kernel structure =========================
+// for m_block in m_blocks:
+//   reserve cb_xw1_acc, cb_xw3_acc  (block_h * per_core_N_rounded tiles each)
+//   for k_block in k_blocks:
+//     load X[m_block, k_block]  # block_h rows × block_size K tiles
+//     for n_block in n_blocks:
+//       load W1[k_block, n_block]
+//       for r in block_h:
+//         XW1[r, n_block] += X[r, k_block] @ W1[k_block, n_block]   # L1 acc
+//       load W3[k_block, n_block]
+//       for r in block_h:
+//         XW3[r, n_block] += X[r, k_block] @ W3[k_block, n_block]   # L1 acc
+//   push cb_xw1_acc, cb_xw3_acc
+//   for r in block_h:
+//     for n in per_core_N:
+//       M[r, n] = SiLU(XW1[r, n]) * XW3[r, n]
+//   pop cb_xw1_acc, cb_xw3_acc
 // ============================================================================
 
 constexpr uint32_t per_core_N = get_compile_time_arg_val(0);
-constexpr uint32_t per_core_N_rounded = get_compile_time_arg_val(1);
-constexpr uint32_t block_size = get_compile_time_arg_val(2);
-constexpr uint32_t Wt = get_compile_time_arg_val(3);
-constexpr uint32_t num_n_blocks = get_compile_time_arg_val(4);
-constexpr uint32_t block_h = get_compile_time_arg_val(5);
-constexpr uint32_t num_m_blocks = get_compile_time_arg_val(6);
+constexpr uint32_t block_size = get_compile_time_arg_val(1);
+constexpr uint32_t Wt = get_compile_time_arg_val(2);
+constexpr uint32_t block_h = get_compile_time_arg_val(3);
+constexpr uint32_t num_m_blocks = get_compile_time_arg_val(4);
+
+// Derived from per_core_N and block_size (single source of truth).
+constexpr uint32_t per_core_N_rounded = ((per_core_N + block_size - 1U) / block_size) * block_size;
+constexpr uint32_t num_n_blocks = per_core_N_rounded / block_size;
 
 constexpr uint32_t tiles_per_n_block = block_size * block_size;
 constexpr uint32_t x_tiles_per_block = block_h * block_size;
@@ -45,7 +70,7 @@ constexpr auto cb_m_out_idx = tt::CBIndex::c_5;
 
 // Matmul one row: multiply X row by one N-block of weights in CB.
 // in1_stride: distance between consecutive K-rows in CB (= block_size).
-inline void matmul_one_row_fast(
+inline void matmul_one_row(
     const tt::CBIndex cb_x_idx,
     const tt::CBIndex cb_w_idx,
     const tt::CBIndex cb_acc_idx,
@@ -74,11 +99,8 @@ inline void matmul_one_row_fast(
     }
 
     tile_regs_commit();
-    tile_regs_wait();
-    for (uint32_t t = 0U; t < block_size; ++t) {
-        pack_tile</* out_of_order_output = */ true>(t, cb_acc_idx, acc_offset + t);
-    }
-    tile_regs_release();
+    pack_l1_acc_block(
+        static_cast<uint32_t>(cb_acc_idx), /*first_block=*/false, block_size, acc_offset, /*use_l1_acc=*/false);
 }
 
 inline void compute_silu_tile(uint32_t tile_offset, uint32_t base_reg) {
@@ -109,7 +131,7 @@ inline void matmul_rows_for_one_n_block(
     pack_reconfig_l1_acc(first_k_block ? 0 : 1U);
 
     for (uint32_t m_sub = 0U; m_sub < block_h; ++m_sub) {
-        matmul_one_row_fast(
+        matmul_one_row(
             cb_in0_idx,
             cb_w_idx,
             cb_acc_idx,
