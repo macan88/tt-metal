@@ -5,6 +5,7 @@
 import pytest
 
 import ttnn
+from models.common.utility_functions import is_llk_assert_enabled
 from models.demos.deepseek_v3.tests.unit.utils import random_torch_tensor, run_test
 from tests.ttnn.utils_for_testing import assert_with_pcc
 
@@ -26,6 +27,8 @@ from tests.ttnn.utils_for_testing import assert_with_pcc
     "device_params", [{"trace_region_size": 10000, "fabric_config": ttnn.FabricConfig.FABRIC_1D}], indirect=True
 )
 def test_tilize(mesh_device, shape, dtype, mem_config, layout, enable_trace):
+    if shape == [1, 8, 128, 7168] or shape == [8, 1, 32, 7168] and is_llk_assert_enabled():
+        pytest.skip("Hits LLK assert check for are_packers_configured_correctly.")
     torch_input = random_torch_tensor(dtype, shape)
     torch_output = torch_input
 
